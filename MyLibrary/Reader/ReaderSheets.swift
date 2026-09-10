@@ -180,6 +180,10 @@ struct ReaderSettingsView: View {
                         ForEach(ReaderLayout.allCases) { Text($0.displayName).tag($0) }
                     }
                     .pickerStyle(.segmented)
+                    if UIDevice.current.userInterfaceIdiom == .pad {
+                        Toggle("Two Pages in Landscape", isOn: $settings.twoPagesInLandscape)
+                            .disabled(settings.layout != .paged)
+                    }
                     Toggle("Keep Screen Awake", isOn: $settings.keepScreenOn)
                 }
             }

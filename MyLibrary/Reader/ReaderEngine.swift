@@ -217,7 +217,8 @@ enum ReaderEngine {
       /// Text near the top of the current page, used as a bookmark preview.
       S.snippet = function () {
         try {
-          var x = S.mode === "paged" ? window.innerWidth * 0.5 : window.innerWidth * 0.5;
+          // Left of center, so a two-page spread samples the left page, not the gutter.
+          var x = window.innerWidth * 0.25;
           var y = window.innerHeight * 0.12;
           var range = document.caretRangeFromPoint(x, y);
           var node = range ? range.startContainer : null;

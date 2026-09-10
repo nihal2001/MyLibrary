@@ -341,7 +341,8 @@ final class ReflowableReaderModel {
     private func readerCSS() -> String {
         let theme = settings.theme
         let horizontal = Int(settings.margin)
-        let vertical = max(24, Int(settings.margin * 0.9))
+        // The reader view already keeps the bars' height clear above and below.
+        let vertical = max(12, Int(settings.margin * 0.5))
         let fontStack = settings.font.cssStack ?? "-apple-system, system-ui, sans-serif"
         let alignment = settings.justified ? "justify" : "initial"
         let linkColor = theme.isDark ? "#6fb0ff" : "#0a58ca"
@@ -372,9 +373,13 @@ final class ReflowableReaderModel {
           height: auto !important;
         }
         img, svg, image {
-          max-height: calc(100vh - \(vertical * 2)px) !important;
+          /* A little shorter than a page: with the line box around an inline
+             image, a full-page-tall one never fits a fresh column, and WebKit
+             slices it across two pages instead of moving it. */
+          max-height: calc(100vh - \(vertical * 2)px - 2em) !important;
           object-fit: contain;
         }
+        img, svg, figure { break-inside: avoid; }
         pre, code { white-space: pre-wrap !important; word-break: break-word; }
         a, a * { color: \(linkColor) !important; }
         """
@@ -407,6 +412,24 @@ final class ReflowableReaderModel {
               will-change: transform;
             }
             """
+            if settings.twoPagesInLandscape && UIDevice.current.userInterfaceIdiom == .pad {
+                // Two outer margins plus a gutter of two margins make one spread
+                // exactly one viewport wide, so pages still turn by 100vw. The
+                // media query follows rotation and split view without a reload.
+                let spreadMargin = max(horizontal, 48)
+                css += """
+
+                @media (orientation: landscape) and (min-width: 700px) {
+                  body {
+                    padding-left: \(spreadMargin)px !important;
+                    padding-right: \(spreadMargin)px !important;
+                    column-width: calc(50vw - \(spreadMargin * 2)px - 1px);
+                    column-count: 2;
+                    column-gap: \(spreadMargin * 2)px;
+                  }
+                }
+                """
+            }
         case .scrolling:
             css += """
 

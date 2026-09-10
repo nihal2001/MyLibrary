@@ -100,6 +100,7 @@ final class ReaderSettings {
         static let layout = "reader.layout"
         static let justified = "reader.justified"
         static let keepScreenOn = "reader.keepScreenOn"
+        static let twoPagesInLandscape = "reader.twoPagesInLandscape"
     }
 
     var theme: ReaderTheme { didSet { store(theme.rawValue, Key.theme) } }
@@ -111,6 +112,8 @@ final class ReaderSettings {
     var margin: Double { didSet { store(margin, Key.margin) } }
     var layout: ReaderLayout { didSet { store(layout.rawValue, Key.layout) } }
     var justified: Bool { didSet { store(justified, Key.justified) } }
+    /// iPad: show facing pages while the reader is wider than it is tall.
+    var twoPagesInLandscape: Bool { didSet { store(twoPagesInLandscape, Key.twoPagesInLandscape) } }
     var keepScreenOn: Bool {
         didSet {
             store(keepScreenOn, Key.keepScreenOn)
@@ -128,6 +131,7 @@ final class ReaderSettings {
         margin = defaults.object(forKey: Key.margin) as? Double ?? 24
         layout = ReaderLayout(rawValue: defaults.string(forKey: Key.layout) ?? "") ?? .paged
         justified = defaults.object(forKey: Key.justified) as? Bool ?? false
+        twoPagesInLandscape = defaults.object(forKey: Key.twoPagesInLandscape) as? Bool ?? true
         keepScreenOn = defaults.object(forKey: Key.keepScreenOn) as? Bool ?? false
     }
 
@@ -137,6 +141,6 @@ final class ReaderSettings {
 
     /// Bumped whenever a change requires the web view to re-render.
     var styleSignature: String {
-        "\(theme.rawValue)|\(font.rawValue)|\(Int(fontScale))|\(lineHeight)|\(Int(margin))|\(layout.rawValue)|\(justified)"
+        "\(theme.rawValue)|\(font.rawValue)|\(Int(fontScale))|\(lineHeight)|\(Int(margin))|\(layout.rawValue)|\(justified)|\(twoPagesInLandscape)"
     }
 }

@@ -22,7 +22,7 @@ party packages, no bundled fonts, no bundled images.
 | Format | Support |
 | --- | --- |
 | EPUB 2 / EPUB 3 | Reflowable text, images, embedded CSS, EPUB 3 `nav` and EPUB 2 NCX contents |
-| PDF | PDFKit rendering, outline, continuous or page-by-page, one or two up |
+| PDF | PDFKit rendering, outline, continuous or page-by-page, facing pages in landscape on iPad |
 | Text | `.txt` and `.md`, wrapped into the same reflowable reader |
 
 **Reader**
@@ -31,6 +31,8 @@ party packages, no bundled fonts, no bundled images.
   text size, line spacing, margins, and justification
 - Table of contents, tap zones (left/right to turn, center for chrome), and a
   scrubber across the whole book
+- iPad: two pages side by side in landscape (on by default, "Two Pages in
+  Landscape" in settings); a narrow Split View window falls back to one page
 - Keep-screen-awake toggle
 
 **Position and bookmarks**

@@ -42,7 +42,13 @@ struct PDFReaderView: View {
                 if showsChrome { bottomBar.transition(.move(edge: .bottom).combined(with: .opacity)) }
             }
         }
-        .task { controller.load(url: book.fileURL, startingAt: book.pageIndex) }
+        .task {
+            controller.twoPagesInLandscape = settings.twoPagesInLandscape
+            controller.load(url: book.fileURL, startingAt: book.pageIndex)
+        }
+        .onChange(of: settings.twoPagesInLandscape) { _, value in
+            controller.twoPagesInLandscape = value
+        }
         .onChange(of: controller.pageIndex) { _, page in
             book.pageIndex = page
             if controller.pageCount > 0 {
@@ -88,7 +94,9 @@ struct PDFReaderView: View {
                     Text("Continuous").tag(true)
                     Text("Page by Page").tag(false)
                 }
-                Toggle("Two Pages", isOn: $controller.isTwoUp)
+                if UIDevice.current.userInterfaceIdiom == .pad {
+                    Toggle("Two Pages in Landscape", isOn: $settings.twoPagesInLandscape)
+                }
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
@@ -150,13 +158,14 @@ final class PDFReaderController {
     private(set) var outline: [PDFOutlineEntry] = []
 
     var isContinuous = true { didSet { applyDisplayMode() } }
-    var isTwoUp = false { didSet { applyDisplayMode() } }
+    var twoPagesInLandscape = true { didSet { applyDisplayMode() } }
 
     @ObservationIgnored let pdfView = LayoutReportingPDFView()
     @ObservationIgnored private var observer: NSObjectProtocol?
     /// The page to open at. PDFView ignores `go(to:)` until it has a size, and
     /// meanwhile reports page 0, which would overwrite the saved position.
     @ObservationIgnored private var pendingPage: Int?
+    @ObservationIgnored private var isLandscape = false
 
     init() {
         pdfView.autoScales = true
@@ -166,7 +175,7 @@ final class PDFReaderController {
         pdfView.backgroundColor = .systemGray6
         // PDFKit reuses tiles aggressively; this keeps memory flat on big files.
         pdfView.pageShadowsEnabled = false
-        pdfView.onLayout = { [weak self] in self?.applyPendingPage() }
+        pdfView.onLayout = { [weak self] in self?.viewDidLayout() }
 
         observer = NotificationCenter.default.addObserver(
             forName: .PDFViewPageChanged, object: pdfView, queue: .main
@@ -190,6 +199,15 @@ final class PDFReaderController {
         outline = Self.flattenOutline(document)
         isLoaded = true
         pendingPage = page
+        applyPendingPage()
+    }
+
+    private func viewDidLayout() {
+        let landscape = pdfView.bounds.width > pdfView.bounds.height
+        if landscape != isLandscape {
+            isLandscape = landscape
+            applyDisplayMode()
+        }
         applyPendingPage()
     }
 
@@ -224,13 +242,19 @@ final class PDFReaderController {
     }
 
     private func applyDisplayMode() {
-        switch (isContinuous, isTwoUp) {
+        // Facing pages only on iPad, and only while the reader is landscape.
+        let twoUp = twoPagesInLandscape && isLandscape && UIDevice.current.userInterfaceIdiom == .pad
+        let current = pdfView.currentPage
+        switch (isContinuous, twoUp) {
         case (true, false): pdfView.displayMode = .singlePageContinuous
         case (true, true): pdfView.displayMode = .twoUpContinuous
         case (false, false): pdfView.displayMode = .singlePage
         case (false, true): pdfView.displayMode = .twoUp
         }
         pdfView.displayDirection = isContinuous ? .vertical : .horizontal
+        // Book-style spreads: the cover stands alone, then left/right pairs.
+        pdfView.displaysAsBook = twoUp
+        if let current, pendingPage == nil { pdfView.go(to: current) }
     }
 
     private static func flattenOutline(_ document: PDFDocument) -> [PDFOutlineEntry] {
