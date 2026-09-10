@@ -180,6 +180,8 @@ struct ReaderSettingsView: View {
                         ForEach(ReaderLayout.allCases) { Text($0.displayName).tag($0) }
                     }
                     .pickerStyle(.segmented)
+                    Toggle("Page Curl", isOn: $settings.pageCurl)
+                        .disabled(settings.layout != .paged)
                     if UIDevice.current.userInterfaceIdiom == .pad {
                         Toggle("Two Pages in Landscape", isOn: $settings.twoPagesInLandscape)
                             .disabled(settings.layout != .paged)

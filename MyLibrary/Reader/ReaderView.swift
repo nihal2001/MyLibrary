@@ -45,7 +45,7 @@ struct ReflowableReaderView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { model.showsChrome.toggle() } }
 
-            WebViewContainer(webView: model.webView)
+            WebViewContainer(view: model.canvas)
                 .padding(.top, chromeInsets.top)
                 .padding(.bottom, chromeInsets.bottom)
 
@@ -109,13 +109,13 @@ struct ReflowableReaderView: View {
     }
 }
 
-/// Hosts the reader's `WKWebView`, which is owned by the model so it survives
-/// SwiftUI view updates.
+/// Hosts the reader's web view and page-curl layer, which are owned by the model
+/// so they survive SwiftUI view updates.
 struct WebViewContainer: UIViewRepresentable {
-    let webView: WKWebView
+    let view: UIView
 
-    func makeUIView(context: Context) -> WKWebView { webView }
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func makeUIView(context: Context) -> UIView { view }
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
 struct ReaderErrorView: View {

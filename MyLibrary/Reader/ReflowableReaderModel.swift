@@ -49,6 +49,11 @@ final class ReflowableReaderModel {
     // MARK: - Internals
 
     @ObservationIgnored let webView: WKWebView
+    /// The web view with the page-curl layer above it; this is what the view hosts.
+    @ObservationIgnored let canvas: ReaderCanvasView
+    @ObservationIgnored private let curl: PageCurlController
+    /// Whether the engine is laying out two pages per screen.
+    @ObservationIgnored private(set) var isSpread = false
     @ObservationIgnored private let bridge = Bridge()
     @ObservationIgnored private let settings = ReaderSettings.shared
     @ObservationIgnored private var book: Book?
@@ -67,12 +72,15 @@ final class ReflowableReaderModel {
         webView.scrollView.showsVerticalScrollIndicator = false
         webView.isOpaque = false
         webView.alpha = 0
+        canvas = ReaderCanvasView(webView: webView)
+        curl = PageCurlController()
 
         bridge.model = self
         webView.navigationDelegate = bridge
         // WKWebView copies its configuration at init, so the handler has to be
         // registered on the live copy rather than on the local one.
         webView.configuration.userContentController.add(bridge, name: "reader")
+        curl.attach(to: self, canvas: canvas)
     }
 
     // MARK: - Loading
@@ -111,6 +119,7 @@ final class ReflowableReaderModel {
         guard let source, let url = source.documentURL(at: documentIndex) else { return }
         isLoading = true
         tocIndex = nil
+        curl.invalidate()
         webView.alpha = 0
         refreshUserScripts()
         webView.loadFileURL(url, allowingReadAccessTo: source.rootURL)
@@ -127,7 +136,10 @@ final class ReflowableReaderModel {
             guard entry.spineIndex == documentIndex, let fragment = entry.fragment else { return nil }
             return ["toc": index, "id": fragment]
         }
-        let payload: [String: Any] = ["css": readerCSS(), "mode": settings.layout.rawValue, "anchors": anchors]
+        let payload: [String: Any] = ["css": readerCSS(),
+                                      "mode": settings.layout.rawValue,
+                                      "anchors": anchors,
+                                      "curl": settings.pageCurl && settings.layout == .paged]
         let json = (try? JSONSerialization.data(withJSONObject: payload))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
 
@@ -159,6 +171,40 @@ final class ReflowableReaderModel {
 
     func goToNextPage() { evaluate("window.__ml && window.__ml.next();") }
     func goToPreviousPage() { evaluate("window.__ml && window.__ml.previous();") }
+
+    // MARK: - Page curl
+
+    var curlIsActive: Bool {
+        settings.pageCurl && settings.layout == .paged && source != nil && !isLoading && loadError == nil
+    }
+
+    var hasPageAfter: Bool {
+        page < pageCount - 1 || documentIndex < (source?.documents.count ?? 0) - 1
+    }
+
+    var hasPageBefore: Bool { page > 0 || documentIndex > 0 }
+
+    var pageBackground: UIColor { UIColor(settings.theme.background) }
+
+    /// A curl landed: move the live page to match. Crossing a chapter break
+    /// loads the neighbouring document, as a tap would.
+    func curlDidTurn(forward: Bool) {
+        forward ? goToNextPage() : goToPreviousPage()
+    }
+
+    /// Shows `page` (or, for `nil`, the reader's own page) without changing the
+    /// position, and returns once WebKit has drawn it.
+    func showPage(_ page: Int?) async {
+        let target = page.map(String.init) ?? "window.__ml.page"
+        _ = try? await webView.callAsyncJavaScript(
+            """
+            if (window.__ml) { window.__ml.showPage(\(target)); }
+            await new Promise(function (resolve) {
+              requestAnimationFrame(function () { requestAnimationFrame(resolve); });
+            });
+            """,
+            contentWorld: .page)
+    }
 
     func goToDocument(at index: Int, fraction: Double = 0, fragment: String? = nil) {
         guard let source, source.documents.indices.contains(index) else { return }
@@ -234,6 +280,7 @@ final class ReflowableReaderModel {
             fraction = number(message["fraction"]) ?? 0
             let reportedTOC = Int(number(message["toc"]) ?? -1)
             tocIndex = reportedTOC >= 0 ? reportedTOC : nil
+            isSpread = (message["spread"] as? NSNumber)?.boolValue ?? false
 
             var jumped = false
             if type == "ready" {
@@ -252,6 +299,7 @@ final class ReflowableReaderModel {
             // A pending jump reports again once it lands; saving the pre-jump
             // position here would overwrite where the reader actually left off.
             if !jumped { persistPosition() }
+            curl.setNeedsRefresh()
 
         case "edge":
             advanceDocument(by: (message["direction"] as? String) == "next" ? 1 : -1)
@@ -263,8 +311,8 @@ final class ReflowableReaderModel {
 
         case "tap":
             switch message["zone"] as? String {
-            case "left": goToPreviousPage()
-            case "right": goToNextPage()
+            case "left": if !curl.turn(forward: false) { goToPreviousPage() }
+            case "right": if !curl.turn(forward: true) { goToNextPage() }
             default: withAnimation(.easeInOut(duration: 0.2)) { showsChrome.toggle() }
             }
 

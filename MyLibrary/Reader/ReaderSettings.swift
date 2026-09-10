@@ -102,6 +102,7 @@ final class ReaderSettings {
         static let keepScreenOn = "reader.keepScreenOn"
         static let twoPagesInLandscape = "reader.twoPagesInLandscape"
         static let pdfSwipeToTurn = "reader.pdfSwipeToTurn"
+        static let pageCurl = "reader.pageCurl"
     }
 
     var theme: ReaderTheme { didSet { store(theme.rawValue, Key.theme) } }
@@ -117,6 +118,8 @@ final class ReaderSettings {
     var twoPagesInLandscape: Bool { didSet { store(twoPagesInLandscape, Key.twoPagesInLandscape) } }
     /// PDFs: turn pages by swiping sideways instead of scrolling.
     var pdfSwipeToTurn: Bool { didSet { store(pdfSwipeToTurn, Key.pdfSwipeToTurn) } }
+    /// Paged EPUB and text: turn pages with a curl that follows the finger.
+    var pageCurl: Bool { didSet { store(pageCurl, Key.pageCurl) } }
     var keepScreenOn: Bool {
         didSet {
             store(keepScreenOn, Key.keepScreenOn)
@@ -136,6 +139,7 @@ final class ReaderSettings {
         justified = defaults.object(forKey: Key.justified) as? Bool ?? false
         twoPagesInLandscape = defaults.object(forKey: Key.twoPagesInLandscape) as? Bool ?? true
         pdfSwipeToTurn = defaults.object(forKey: Key.pdfSwipeToTurn) as? Bool ?? false
+        pageCurl = defaults.object(forKey: Key.pageCurl) as? Bool ?? true
         keepScreenOn = defaults.object(forKey: Key.keepScreenOn) as? Bool ?? false
     }
 
@@ -145,6 +149,6 @@ final class ReaderSettings {
 
     /// Bumped whenever a change requires the web view to re-render.
     var styleSignature: String {
-        "\(theme.rawValue)|\(font.rawValue)|\(Int(fontScale))|\(lineHeight)|\(Int(margin))|\(layout.rawValue)|\(justified)|\(twoPagesInLandscape)"
+        "\(theme.rawValue)|\(font.rawValue)|\(Int(fontScale))|\(lineHeight)|\(Int(margin))|\(layout.rawValue)|\(justified)|\(twoPagesInLandscape)|\(pageCurl)"
     }
 }

@@ -139,11 +139,24 @@ enum ReaderEngine {
           pageCount: S.pageCount,
           fraction: S.fraction(),
           toc: currentTOC(),
+          spread: isSpread(),
           atStart: S.mode === "scrolling" ? window.scrollY <= 1 : S.page <= 0,
           atEnd: S.mode === "scrolling"
             ? window.scrollY >= scrollExtent() - 1
             : S.page >= S.pageCount - 1
         });
+      }
+
+      /// Moves the columns without changing the reader's page; the page curl uses
+      /// this to render a neighbouring page, then restores `S.page`.
+      S.showPage = function (page) {
+        if (S.mode !== "paged") { return; }
+        document.body.style.transform = "translateX(" + (-page * S.stride) + "px)";
+      };
+
+      function isSpread() {
+        if (S.mode !== "paged") { return false; }
+        return parseInt(window.getComputedStyle(document.body).columnCount, 10) === 2;
       }
 
       S.goToPage = function (page, silent) {
@@ -271,7 +284,8 @@ enum ReaderEngine {
       }, { passive: true });
 
       document.addEventListener("touchend", function (event) {
-        if (S.mode !== "paged" || hasSelection()) { return; }
+        // With the page curl on, Swift owns horizontal drags.
+        if (S.mode !== "paged" || config.curl || hasSelection()) { return; }
         var touch = event.changedTouches[0];
         if (!touch) { return; }
         var dx = touch.clientX - touchStartX;

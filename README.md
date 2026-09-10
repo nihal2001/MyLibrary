@@ -31,6 +31,8 @@ party packages, no bundled fonts, no bundled images.
   text size, line spacing, margins, and justification
 - Table of contents, tap zones (left/right to turn, center for chrome), and a
   scrubber across the whole book
+- Page curl you drag with your finger, as in Apple Books (paged layout; two-page
+  spreads curl from the middle on iPad)
 - iPad: two pages side by side in landscape (on by default, "Two Pages in
   Landscape" in settings); a narrow Split View window falls back to one page
 - Keep-screen-awake toggle
