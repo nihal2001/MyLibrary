@@ -20,6 +20,8 @@ enum ReaderEngine {
         // A requested fraction, kept until the reader moves so relayouts (late
         // images, rotation) round it once at the final page count.
         targetFraction: null,
+        // Likewise a requested anchor, re-found after each relayout.
+        targetFragment: null,
         ready: false
       };
 
@@ -154,6 +156,7 @@ enum ReaderEngine {
       S.goToFraction = function (fraction, silent) {
         var f = Math.min(1, Math.max(0, fraction || 0));
         S.targetFraction = f;
+        S.targetFragment = null;
         if (S.mode === "scrolling") {
           window.scrollTo(0, f * scrollExtent());
           if (!silent) { report(); }
@@ -162,10 +165,11 @@ enum ReaderEngine {
         }
       };
 
-      S.goToFragment = function (fragment) {
+      S.goToFragment = function (fragment, silent) {
         var target = findTarget(fragment);
         if (!target) { return false; }
         S.targetFraction = null;
+        S.targetFragment = fragment;
         if (S.mode === "scrolling") {
           window.scrollTo(0, target.getBoundingClientRect().top + window.scrollY);
         } else {
@@ -173,12 +177,13 @@ enum ReaderEngine {
           var left = target.getBoundingClientRect().left;
           S.goToPage(Math.floor(left / S.stride), true);
         }
-        report();
+        if (!silent) { report(); }
         return true;
       };
 
       S.next = function () {
         S.targetFraction = null;
+        S.targetFragment = null;
         if (S.mode === "scrolling") {
           if (window.scrollY >= scrollExtent() - 1) { post({ type: "edge", direction: "next" }); return; }
           window.scrollBy({ top: window.innerHeight * 0.92, behavior: "instant" });
@@ -197,6 +202,7 @@ enum ReaderEngine {
 
       S.previous = function () {
         S.targetFraction = null;
+        S.targetFragment = null;
         if (S.mode === "scrolling") {
           if (window.scrollY <= 1) { post({ type: "edge", direction: "previous" }); return; }
           window.scrollBy({ top: -window.innerHeight * 0.92, behavior: "instant" });
@@ -234,7 +240,20 @@ enum ReaderEngine {
         if (hasSelection()) { return; }
         var node = event.target;
         while (node) {
-          if (node.tagName && node.tagName.toLowerCase() === "a") { return; }
+          if (node.localName === "a") {
+            // Links inside the book are handed to Swift, which moves the reader
+            // there. Letting WebKit follow them would load the file behind the
+            // reader's back and scroll the viewport against the page transform.
+            var raw = node.getAttribute("href") ||
+                      node.getAttributeNS("http://www.w3.org/1999/xlink", "href");
+            var url = null;
+            try { url = raw ? new URL(raw, document.baseURI) : null; } catch (e) {}
+            if (url && url.protocol === "file:") {
+              event.preventDefault();
+              post({ type: "link", href: url.href });
+            }
+            return;
+          }
           node = node.parentElement;
         }
         var third = window.innerWidth / 3;
@@ -262,6 +281,14 @@ enum ReaderEngine {
         }
       }, { passive: true });
 
+      if (S.mode === "paged") {
+        // Pages move by transform alone; any scroll (focus, find, a stray
+        // fragment jump) would offset the columns and jumble the page.
+        window.addEventListener("scroll", function () {
+          if (window.scrollX !== 0 || window.scrollY !== 0) { window.scrollTo(0, 0); }
+        }, { passive: true });
+      }
+
       if (S.mode === "scrolling") {
         var scrollTimer = null;
         window.addEventListener("scroll", function () {
@@ -275,7 +302,9 @@ enum ReaderEngine {
       function relayout() {
         var fraction = S.targetFraction !== null ? S.targetFraction : S.fraction();
         measure();
-        S.goToFraction(fraction, true);
+        if (!(S.targetFragment && S.goToFragment(S.targetFragment, true))) {
+          S.goToFraction(fraction, true);
+        }
         report();
       }
       window.addEventListener("resize", function () {

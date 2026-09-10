@@ -256,6 +256,11 @@ final class ReflowableReaderModel {
         case "edge":
             advanceDocument(by: (message["direction"] as? String) == "next" ? 1 : -1)
 
+        case "link":
+            if let href = message["href"] as? String, let url = URL(string: href) {
+                follow(link: url)
+            }
+
         case "tap":
             switch message["zone"] as? String {
             case "left": goToPreviousPage()
@@ -265,6 +270,24 @@ final class ReflowableReaderModel {
 
         default:
             break
+        }
+    }
+
+    /// Moves to the target of a link inside the book, keeping the spine index
+    /// and saved position in step. Targets outside the spine are ignored.
+    fileprivate func follow(link url: URL) {
+        guard let source else { return }
+        let path = url.resolvingSymlinksInPath().path
+        guard let index = source.documents.firstIndex(where: { $0.resolvingSymlinksInPath().path == path }) else {
+            return
+        }
+        let fragment = url.fragment(percentEncoded: false).flatMap { $0.isEmpty ? nil : $0 }
+        if index != documentIndex {
+            goToDocument(at: index, fraction: 0, fragment: fragment)
+        } else if let fragment {
+            evaluate("window.__ml && window.__ml.goToFragment(\(jsString(fragment)));")
+        } else {
+            evaluate("window.__ml && window.__ml.goToPage(0);")
         }
     }
 
@@ -428,10 +451,15 @@ private final class Bridge: NSObject, WKNavigationDelegate, WKScriptMessageHandl
             decisionHandler(.allow)
             return
         }
-        if url.isFileURL || navigationAction.navigationType != .linkActivated {
+        guard navigationAction.navigationType == .linkActivated else {
             decisionHandler(.allow)
+            return
+        }
+        decisionHandler(.cancel)
+        if url.isFileURL {
+            // The engine normally intercepts these; this catches any it missed.
+            MainActor.assumeIsolated { model?.follow(link: url) }
         } else {
-            decisionHandler(.cancel)
             UIApplication.shared.open(url)
         }
     }
