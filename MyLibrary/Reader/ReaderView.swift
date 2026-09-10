@@ -70,7 +70,8 @@ struct ReflowableReaderView: View {
         }
         .sheet(isPresented: $showsTOC) {
             TableOfContentsView(entries: model.source?.toc ?? [],
-                                currentIndex: model.documentIndex) { entry in
+                                currentIndex: model.documentIndex,
+                                currentEntryIndex: model.tocIndex) { entry in
                 model.go(to: entry)
             }
         }

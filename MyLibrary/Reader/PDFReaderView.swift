@@ -152,8 +152,11 @@ final class PDFReaderController {
     var isContinuous = true { didSet { applyDisplayMode() } }
     var isTwoUp = false { didSet { applyDisplayMode() } }
 
-    @ObservationIgnored let pdfView = PDFView()
+    @ObservationIgnored let pdfView = LayoutReportingPDFView()
     @ObservationIgnored private var observer: NSObjectProtocol?
+    /// The page to open at. PDFView ignores `go(to:)` until it has a size, and
+    /// meanwhile reports page 0, which would overwrite the saved position.
+    @ObservationIgnored private var pendingPage: Int?
 
     init() {
         pdfView.autoScales = true
@@ -163,6 +166,7 @@ final class PDFReaderController {
         pdfView.backgroundColor = .systemGray6
         // PDFKit reuses tiles aggressively; this keeps memory flat on big files.
         pdfView.pageShadowsEnabled = false
+        pdfView.onLayout = { [weak self] in self?.applyPendingPage() }
 
         observer = NotificationCenter.default.addObserver(
             forName: .PDFViewPageChanged, object: pdfView, queue: .main
@@ -185,6 +189,13 @@ final class PDFReaderController {
         pageCount = document.pageCount
         outline = Self.flattenOutline(document)
         isLoaded = true
+        pendingPage = page
+        applyPendingPage()
+    }
+
+    private func applyPendingPage() {
+        guard let page = pendingPage, pdfView.bounds.width > 0, pdfView.bounds.height > 0 else { return }
+        pendingPage = nil
         go(toPage: page)
     }
 
@@ -207,7 +218,7 @@ final class PDFReaderController {
     }
 
     private func syncPageIndex() {
-        guard let document = pdfView.document, let current = pdfView.currentPage else { return }
+        guard pendingPage == nil, let document = pdfView.document, let current = pdfView.currentPage else { return }
         let index = document.index(for: current)
         if index != pageIndex { pageIndex = index }
     }
@@ -244,6 +255,17 @@ final class PDFReaderController {
     }
 }
 
+/// Tells the controller when it has been laid out, so the saved page can be
+/// restored once there is a real size to scroll within.
+final class LayoutReportingPDFView: PDFView {
+    var onLayout: (() -> Void)?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onLayout?()
+    }
+}
+
 struct PDFViewContainer: UIViewRepresentable {
     let controller: PDFReaderController
 
@@ -269,6 +291,7 @@ struct PDFOutlineView: View {
                         Text("\(entry.page + 1)").foregroundStyle(.secondary).monospacedDigit()
                     }
                     .padding(.leading, CGFloat(entry.level) * 14)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }

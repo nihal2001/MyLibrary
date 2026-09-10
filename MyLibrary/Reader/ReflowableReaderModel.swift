@@ -17,6 +17,8 @@ final class ReflowableReaderModel {
     private(set) var page: Int = 0
     private(set) var pageCount: Int = 1
     private(set) var fraction: Double = 0
+    /// The table-of-contents entry the engine reports the reader is inside.
+    private(set) var tocIndex: Int?
     private(set) var isLoading = true
     private(set) var loadError: String?
     var showsChrome = true
@@ -29,8 +31,15 @@ final class ReflowableReaderModel {
 
     var chapterTitle: String {
         guard let source else { return "" }
-        let candidates = source.toc.filter { ($0.spineIndex ?? -1) <= documentIndex && $0.spineIndex != nil }
-        return candidates.last?.title ?? ""
+        if let tocIndex, source.toc.indices.contains(tocIndex) {
+            return source.toc[tocIndex].title
+        }
+        // Before this document's first anchored chapter: the entry that starts
+        // the document itself, or else the last one in an earlier document.
+        return source.toc.last { entry in
+            guard let spine = entry.spineIndex else { return false }
+            return spine < documentIndex || (spine == documentIndex && entry.fragment == nil)
+        }?.title ?? ""
     }
 
     var pageDescription: String {
@@ -101,6 +110,7 @@ final class ReflowableReaderModel {
     private func loadCurrentDocument() {
         guard let source, let url = source.documentURL(at: documentIndex) else { return }
         isLoading = true
+        tocIndex = nil
         webView.alpha = 0
         refreshUserScripts()
         webView.loadFileURL(url, allowingReadAccessTo: source.rootURL)
@@ -111,7 +121,13 @@ final class ReflowableReaderModel {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
 
-        let payload: [String: Any] = ["css": readerCSS(), "mode": settings.layout.rawValue]
+        // Chapters that start partway through this document, so the engine can
+        // tell which one is on screen.
+        let anchors: [[String: Any]] = (source?.toc ?? []).enumerated().compactMap { index, entry in
+            guard entry.spineIndex == documentIndex, let fragment = entry.fragment else { return nil }
+            return ["toc": index, "id": fragment]
+        }
+        let payload: [String: Any] = ["css": readerCSS(), "mode": settings.layout.rawValue, "anchors": anchors]
         let json = (try? JSONSerialization.data(withJSONObject: payload))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
 
@@ -216,6 +232,8 @@ final class ReflowableReaderModel {
             page = Int(number(message["page"]) ?? 0)
             pageCount = max(1, Int(number(message["pageCount"]) ?? 1))
             fraction = number(message["fraction"]) ?? 0
+            let reportedTOC = Int(number(message["toc"]) ?? -1)
+            tocIndex = reportedTOC >= 0 ? reportedTOC : nil
 
             var jumped = false
             if type == "ready" {
@@ -354,8 +372,12 @@ final class ReflowableReaderModel {
         case .paged:
             css += """
 
-            html, body { height: 100vh !important; overflow: hidden !important; }
+            html, body { height: 100vh !important; }
+            /* Clip at the viewport only. Clipping the body would also clip every
+               column past the first, and the columns move with its transform. */
+            html { overflow: hidden !important; }
             body {
+              overflow: visible !important;
               column-width: calc(100vw - \(horizontal * 2)px);
               column-gap: \(horizontal * 2)px;
               column-fill: auto;

@@ -16,6 +16,10 @@ enum ReaderEngine {
         page: 0,
         pageCount: 1,
         stride: 1,
+        anchorPages: [],
+        // A requested fraction, kept until the reader moves so relayouts (late
+        // images, rotation) round it once at the final page count.
+        targetFraction: null,
         ready: false
       };
 
@@ -25,6 +29,17 @@ enum ReaderEngine {
 
       // --- Styling -----------------------------------------------------------
       function injectStyle() {
+        // EPUB XHTML rarely declares a viewport, and without one WebKit lays the
+        // page out 980px wide and scales it down, leaving the text tiny.
+        var head = document.head || document.documentElement;
+        var viewport = document.querySelector("meta[name='viewport']");
+        if (!viewport) {
+          viewport = document.createElement("meta");
+          viewport.setAttribute("name", "viewport");
+          head.insertBefore(viewport, head.firstChild);
+        }
+        viewport.setAttribute("content", "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no");
+
         var existing = document.getElementById("ml-style");
         if (existing) { existing.parentNode.removeChild(existing); }
         var style = document.createElement("style");
@@ -54,15 +69,51 @@ enum ReaderEngine {
         return document.body.scrollWidth;
       }
 
+      function findTarget(fragment) {
+        try {
+          return document.getElementById(fragment) ||
+                 document.querySelector("[name='" + fragment + "']");
+        } catch (e) {
+          return null;
+        }
+      }
+
+      /// Where each table-of-contents anchor in this document starts: a page in
+      /// paged mode, a document offset when scrolling.
+      function locateAnchors() {
+        S.anchorPages = [];
+        var anchors = config.anchors || [];
+        for (var i = 0; i < anchors.length; i++) {
+          var target = findTarget(anchors[i].id);
+          if (!target) { continue; }
+          var rect = target.getBoundingClientRect();
+          var at = S.mode === "scrolling"
+            ? rect.top + window.scrollY
+            : Math.floor(rect.left / S.stride);
+          S.anchorPages.push({ toc: anchors[i].toc, at: at });
+        }
+      }
+
+      function currentTOC() {
+        var here = S.mode === "scrolling" ? window.scrollY + window.innerHeight * 0.3 : S.page;
+        var found = -1;
+        for (var i = 0; i < S.anchorPages.length; i++) {
+          if (S.anchorPages[i].at <= here) { found = S.anchorPages[i].toc; }
+        }
+        return found;
+      }
+
       function measure() {
         if (S.mode === "scrolling") {
           S.pageCount = 1;
+          locateAnchors();
           return;
         }
         S.stride = Math.max(1, window.innerWidth);
         var previous = document.body.style.transform;
         document.body.style.transform = "translateX(0px)";
         var right = contentRight();
+        locateAnchors();
         document.body.style.transform = previous;
         S.pageCount = Math.max(1, Math.ceil((right - 1) / S.stride));
       }
@@ -85,6 +136,7 @@ enum ReaderEngine {
           page: S.page,
           pageCount: S.pageCount,
           fraction: S.fraction(),
+          toc: currentTOC(),
           atStart: S.mode === "scrolling" ? window.scrollY <= 1 : S.page <= 0,
           atEnd: S.mode === "scrolling"
             ? window.scrollY >= scrollExtent() - 1
@@ -101,6 +153,7 @@ enum ReaderEngine {
 
       S.goToFraction = function (fraction, silent) {
         var f = Math.min(1, Math.max(0, fraction || 0));
+        S.targetFraction = f;
         if (S.mode === "scrolling") {
           window.scrollTo(0, f * scrollExtent());
           if (!silent) { report(); }
@@ -110,12 +163,9 @@ enum ReaderEngine {
       };
 
       S.goToFragment = function (fragment) {
-        var target = null;
-        try {
-          target = document.getElementById(fragment) ||
-                   document.querySelector("[name='" + fragment + "']");
-        } catch (e) {}
+        var target = findTarget(fragment);
         if (!target) { return false; }
+        S.targetFraction = null;
         if (S.mode === "scrolling") {
           window.scrollTo(0, target.getBoundingClientRect().top + window.scrollY);
         } else {
@@ -128,18 +178,25 @@ enum ReaderEngine {
       };
 
       S.next = function () {
+        S.targetFraction = null;
         if (S.mode === "scrolling") {
           if (window.scrollY >= scrollExtent() - 1) { post({ type: "edge", direction: "next" }); return; }
           window.scrollBy({ top: window.innerHeight * 0.92, behavior: "instant" });
           report();
-        } else if (S.page < S.pageCount - 1) {
-          S.goToPage(S.page + 1);
         } else {
-          post({ type: "edge", direction: "next" });
+          // Layout can still grow after the first measurement (fonts, late
+          // images), so confirm the last page before leaving the document.
+          if (S.page >= S.pageCount - 1) { measure(); }
+          if (S.page < S.pageCount - 1) {
+            S.goToPage(S.page + 1);
+          } else {
+            post({ type: "edge", direction: "next" });
+          }
         }
       };
 
       S.previous = function () {
+        S.targetFraction = null;
         if (S.mode === "scrolling") {
           if (window.scrollY <= 1) { post({ type: "edge", direction: "previous" }); return; }
           window.scrollBy({ top: -window.innerHeight * 0.92, behavior: "instant" });
@@ -216,7 +273,7 @@ enum ReaderEngine {
       // Re-measure on rotation, split-view resize, and late-loading images.
       var resizeTimer = null;
       function relayout() {
-        var fraction = S.fraction();
+        var fraction = S.targetFraction !== null ? S.targetFraction : S.fraction();
         measure();
         S.goToFraction(fraction, true);
         report();
@@ -226,6 +283,9 @@ enum ReaderEngine {
         resizeTimer = setTimeout(relayout, 120);
       });
       window.addEventListener("load", function () { setTimeout(relayout, 0); });
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(function () { setTimeout(relayout, 0); });
+      }
 
       // --- Start -------------------------------------------------------------
       injectStyle();

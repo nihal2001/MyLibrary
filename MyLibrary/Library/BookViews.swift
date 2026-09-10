@@ -15,6 +15,21 @@ struct BookCoverView: View {
     }
 
     var body: some View {
+        // The 2:3 frame sets the size; cover art fills it and is cropped, so a
+        // wide image (a landscape or letter-size PDF page) can't widen the cell.
+        Color.clear
+            .aspectRatio(2.0 / 3.0, contentMode: .fit)
+            .overlay { artwork }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+            }
+            .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
+    }
+
+    @ViewBuilder
+    private var artwork: some View {
         ZStack {
             if let data = book.coverData, let image = UIImage(data: data) {
                 Image(uiImage: image)
@@ -35,13 +50,6 @@ struct BookCoverView: View {
                 .padding(10)
             }
         }
-        .aspectRatio(2.0 / 3.0, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-        .overlay {
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
-        }
-        .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
     }
 }
 

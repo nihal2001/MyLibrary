@@ -5,8 +5,16 @@ import SwiftUI
 struct TableOfContentsView: View {
     let entries: [TOCEntry]
     let currentIndex: Int
+    /// The entry the reader is inside, when known. Several entries can share a
+    /// spine document, so this is more precise than `currentIndex`.
+    var currentEntryIndex: Int? = nil
     let onSelect: (TOCEntry) -> Void
     @Environment(\.dismiss) private var dismiss
+
+    private func isCurrent(_ offset: Int) -> Bool {
+        if let currentEntryIndex { return offset == currentEntryIndex }
+        return entries[offset].spineIndex == currentIndex
+    }
 
     var body: some View {
         NavigationStack {
@@ -16,7 +24,7 @@ struct TableOfContentsView: View {
                                            systemImage: "list.bullet",
                                            description: Text("This book doesn't include a table of contents."))
                 } else {
-                    List(entries) { entry in
+                    List(Array(entries.enumerated()), id: \.element.id) { offset, entry in
                         Button {
                             onSelect(entry)
                             dismiss()
@@ -24,15 +32,16 @@ struct TableOfContentsView: View {
                             HStack {
                                 Text(entry.title)
                                     .lineLimit(2)
-                                    .fontWeight(entry.spineIndex == currentIndex ? .semibold : .regular)
+                                    .fontWeight(isCurrent(offset) ? .semibold : .regular)
                                 Spacer()
-                                if entry.spineIndex == currentIndex {
+                                if isCurrent(offset) {
                                     Image(systemName: "book.fill")
                                         .font(.caption)
                                         .foregroundStyle(.tint)
                                 }
                             }
                             .padding(.leading, CGFloat(entry.level) * 14)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
