@@ -22,7 +22,7 @@ party packages, no bundled fonts, no bundled images.
 | Format | Support |
 | --- | --- |
 | EPUB 2 / EPUB 3 | Reflowable text, images, embedded CSS, EPUB 3 `nav` and EPUB 2 NCX contents |
-| PDF | PDFKit rendering, outline, continuous or page-by-page, facing pages in landscape on iPad |
+| PDF | PDFKit rendering, outline, scroll or swipe to turn pages, facing pages in landscape on iPad |
 | Text | `.txt` and `.md`, wrapped into the same reflowable reader |
 
 **Reader**

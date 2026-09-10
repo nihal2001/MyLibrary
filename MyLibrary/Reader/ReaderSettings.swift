@@ -101,6 +101,7 @@ final class ReaderSettings {
         static let justified = "reader.justified"
         static let keepScreenOn = "reader.keepScreenOn"
         static let twoPagesInLandscape = "reader.twoPagesInLandscape"
+        static let pdfSwipeToTurn = "reader.pdfSwipeToTurn"
     }
 
     var theme: ReaderTheme { didSet { store(theme.rawValue, Key.theme) } }
@@ -114,6 +115,8 @@ final class ReaderSettings {
     var justified: Bool { didSet { store(justified, Key.justified) } }
     /// iPad: show facing pages while the reader is wider than it is tall.
     var twoPagesInLandscape: Bool { didSet { store(twoPagesInLandscape, Key.twoPagesInLandscape) } }
+    /// PDFs: turn pages by swiping sideways instead of scrolling.
+    var pdfSwipeToTurn: Bool { didSet { store(pdfSwipeToTurn, Key.pdfSwipeToTurn) } }
     var keepScreenOn: Bool {
         didSet {
             store(keepScreenOn, Key.keepScreenOn)
@@ -132,6 +135,7 @@ final class ReaderSettings {
         layout = ReaderLayout(rawValue: defaults.string(forKey: Key.layout) ?? "") ?? .paged
         justified = defaults.object(forKey: Key.justified) as? Bool ?? false
         twoPagesInLandscape = defaults.object(forKey: Key.twoPagesInLandscape) as? Bool ?? true
+        pdfSwipeToTurn = defaults.object(forKey: Key.pdfSwipeToTurn) as? Bool ?? false
         keepScreenOn = defaults.object(forKey: Key.keepScreenOn) as? Bool ?? false
     }
 
