@@ -1,0 +1,11 @@
+{
+  "name": "mylibrary-reader-engine-tests",
+  "private": true,
+  "description": "Node tests for the reader's pagination and sentence-focus JavaScript.",
+  "scripts": {
+    "test": "node segmentation.test.js && node engine.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}

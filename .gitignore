@@ -1,0 +1,24 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# Reader engine test deps
+Tests/ReaderEngine/node_modules/
+Tests/ReaderEngine/package-lock.json
+Tests/ReaderEngine/chapter.xhtml
+Tests/ReaderEngine/paras.json
