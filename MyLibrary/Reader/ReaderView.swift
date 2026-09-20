@@ -34,13 +34,20 @@ struct ReflowableReaderView: View {
     @State private var showsSettings = false
     @State private var scrubValue: Double = 0
     @State private var isScrubbing = false
+    /// Space kept clear for the top and bottom bars, so showing them never
+    /// covers text and hiding them never reflows the page.
+    @State private var chromeInsets = EdgeInsets()
 
     var body: some View {
         ZStack {
-            settings.theme.background.ignoresSafeArea()
+            settings.theme.background
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { model.showsChrome.toggle() } }
 
-            WebViewContainer(webView: model.webView)
-                .ignoresSafeArea(edges: .bottom)
+            WebViewContainer(view: model.canvas)
+                .padding(.top, chromeInsets.top)
+                .padding(.bottom, chromeInsets.bottom)
 
             if model.isLoading {
                 ProgressView()
@@ -57,6 +64,7 @@ struct ReflowableReaderView: View {
                          settings: settings,
                          scrubValue: $scrubValue,
                          isScrubbing: $isScrubbing,
+                         chromeInsets: $chromeInsets,
                          onClose: { dismiss() },
                          onContents: { showsTOC = true },
                          onBookmarks: { showsBookmarks = true },
@@ -71,7 +79,8 @@ struct ReflowableReaderView: View {
         }
         .sheet(isPresented: $showsTOC) {
             TableOfContentsView(entries: model.source?.toc ?? [],
-                                currentIndex: model.documentIndex) { entry in
+                                currentIndex: model.documentIndex,
+                                currentEntryIndex: model.tocIndex) { entry in
                 model.go(to: entry)
             }
         }
@@ -101,13 +110,13 @@ struct ReflowableReaderView: View {
     }
 }
 
-/// Hosts the reader's `WKWebView`, which is owned by the model so it survives
-/// SwiftUI view updates.
+/// Hosts the reader's web view and page-curl layer, which are owned by the model
+/// so they survive SwiftUI view updates.
 struct WebViewContainer: UIViewRepresentable {
-    let webView: WKWebView
+    let view: UIView
 
-    func makeUIView(context: Context) -> WKWebView { webView }
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func makeUIView(context: Context) -> UIView { view }
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
 struct ReaderErrorView: View {
@@ -134,6 +143,7 @@ private struct ReaderChrome: View {
     let settings: ReaderSettings
     @Binding var scrubValue: Double
     @Binding var isScrubbing: Bool
+    @Binding var chromeInsets: EdgeInsets
     let onClose: () -> Void
     let onContents: () -> Void
     let onBookmarks: () -> Void
@@ -145,11 +155,19 @@ private struct ReaderChrome: View {
     var body: some View {
         VStack(spacing: 0) {
             if model.showsChrome {
-                topBar.transition(.move(edge: .top).combined(with: .opacity))
+                topBar
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
+                        if height > 0 { chromeInsets.top = height }
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
             Spacer(minLength: 0)
             if model.showsChrome {
-                bottomBar.transition(.move(edge: .bottom).combined(with: .opacity))
+                bottomBar
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
+                        if height > 0 { chromeInsets.bottom = height }
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
                 footer
             }

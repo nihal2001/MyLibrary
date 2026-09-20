@@ -16,7 +16,16 @@ enum ReaderEngine {
         page: 0,
         pageCount: 1,
         stride: 1,
+        anchorPages: [],
+        // A requested fraction, kept until the reader moves so relayouts (late
+        // images, rotation) round it once at the final page count.
+        targetFraction: null,
+        // Likewise a requested anchor, re-found after each relayout.
+        targetFragment: null,
         ready: false,
+        // Swift owns horizontal drags while the curl is running, but Sentence
+        // Focus takes the gestures back to step sentences instead of pages.
+        curlEnabled: config.curl === true,
         focus: {
           enabled: config.focus === true,
           index: -1,
@@ -32,6 +41,17 @@ enum ReaderEngine {
 
       // --- Styling -----------------------------------------------------------
       function injectStyle() {
+        // EPUB XHTML rarely declares a viewport, and without one WebKit lays the
+        // page out 980px wide and scales it down, leaving the text tiny.
+        var head = document.head || document.documentElement;
+        var viewport = document.querySelector("meta[name='viewport']");
+        if (!viewport) {
+          viewport = document.createElement("meta");
+          viewport.setAttribute("name", "viewport");
+          head.insertBefore(viewport, head.firstChild);
+        }
+        viewport.setAttribute("content", "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no");
+
         var existing = document.getElementById("ml-style");
         if (existing) { existing.parentNode.removeChild(existing); }
         var style = document.createElement("style");
@@ -61,15 +81,51 @@ enum ReaderEngine {
         return document.body.scrollWidth;
       }
 
+      function findTarget(fragment) {
+        try {
+          return document.getElementById(fragment) ||
+                 document.querySelector("[name='" + fragment + "']");
+        } catch (e) {
+          return null;
+        }
+      }
+
+      /// Where each table-of-contents anchor in this document starts: a page in
+      /// paged mode, a document offset when scrolling.
+      function locateAnchors() {
+        S.anchorPages = [];
+        var anchors = config.anchors || [];
+        for (var i = 0; i < anchors.length; i++) {
+          var target = findTarget(anchors[i].id);
+          if (!target) { continue; }
+          var rect = target.getBoundingClientRect();
+          var at = S.mode === "scrolling"
+            ? rect.top + window.scrollY
+            : Math.floor(rect.left / S.stride);
+          S.anchorPages.push({ toc: anchors[i].toc, at: at });
+        }
+      }
+
+      function currentTOC() {
+        var here = S.mode === "scrolling" ? window.scrollY + window.innerHeight * 0.3 : S.page;
+        var found = -1;
+        for (var i = 0; i < S.anchorPages.length; i++) {
+          if (S.anchorPages[i].at <= here) { found = S.anchorPages[i].toc; }
+        }
+        return found;
+      }
+
       function measure() {
         if (S.mode === "scrolling") {
           S.pageCount = 1;
+          locateAnchors();
           return;
         }
         S.stride = Math.max(1, window.innerWidth);
         var previous = document.body.style.transform;
         document.body.style.transform = "translateX(0px)";
         var right = contentRight();
+        locateAnchors();
         document.body.style.transform = previous;
         S.pageCount = Math.max(1, Math.ceil((right - 1) / S.stride));
       }
@@ -356,6 +412,8 @@ enum ReaderEngine {
           page: S.page,
           pageCount: S.pageCount,
           fraction: S.fraction(),
+          toc: currentTOC(),
+          spread: isSpread(),
           atStart: S.mode === "scrolling" ? window.scrollY <= 1 : S.page <= 0,
           atEnd: S.mode === "scrolling"
             ? window.scrollY >= scrollExtent() - 1
@@ -364,6 +422,18 @@ enum ReaderEngine {
           sentence: S.focus.index,
           sentenceCount: S.focus.count
         });
+      }
+
+      /// Moves the columns without changing the reader's page; the page curl uses
+      /// this to render a neighbouring page, then restores `S.page`.
+      S.showPage = function (page) {
+        if (S.mode !== "paged") { return; }
+        document.body.style.transform = "translateX(" + (-page * S.stride) + "px)";
+      };
+
+      function isSpread() {
+        if (S.mode !== "paged") { return false; }
+        return parseInt(window.getComputedStyle(document.body).columnCount, 10) === 2;
       }
 
       S.goToPage = function (page, silent) {
@@ -375,6 +445,8 @@ enum ReaderEngine {
 
       S.goToFraction = function (fraction, silent) {
         var f = Math.min(1, Math.max(0, fraction || 0));
+        S.targetFraction = f;
+        S.targetFragment = null;
         if (S.mode === "scrolling") {
           window.scrollTo(0, f * scrollExtent());
         } else {
@@ -385,13 +457,11 @@ enum ReaderEngine {
         if (!silent) { report(); }
       };
 
-      S.goToFragment = function (fragment) {
-        var target = null;
-        try {
-          target = document.getElementById(fragment) ||
-                   document.querySelector("[name='" + fragment + "']");
-        } catch (e) {}
+      S.goToFragment = function (fragment, silent) {
+        var target = findTarget(fragment);
         if (!target) { return false; }
+        S.targetFraction = null;
+        S.targetFragment = fragment;
         if (S.mode === "scrolling") {
           window.scrollTo(0, target.getBoundingClientRect().top + window.scrollY);
         } else {
@@ -400,24 +470,33 @@ enum ReaderEngine {
           S.goToPage(Math.floor(left / S.stride), true);
         }
         S.syncFocusToPage(false);
-        report();
+        if (!silent) { report(); }
         return true;
       };
 
       S.next = function () {
+        S.targetFraction = null;
+        S.targetFragment = null;
         if (S.focus.enabled && S.focus.count) { S.nextSentence(); return; }
         if (S.mode === "scrolling") {
           if (window.scrollY >= scrollExtent() - 1) { post({ type: "edge", direction: "next" }); return; }
           window.scrollBy({ top: window.innerHeight * 0.92, behavior: "instant" });
           report();
-        } else if (S.page < S.pageCount - 1) {
-          S.goToPage(S.page + 1);
         } else {
-          post({ type: "edge", direction: "next" });
+          // Layout can still grow after the first measurement (fonts, late
+          // images), so confirm the last page before leaving the document.
+          if (S.page >= S.pageCount - 1) { measure(); }
+          if (S.page < S.pageCount - 1) {
+            S.goToPage(S.page + 1);
+          } else {
+            post({ type: "edge", direction: "next" });
+          }
         }
       };
 
       S.previous = function () {
+        S.targetFraction = null;
+        S.targetFragment = null;
         if (S.focus.enabled && S.focus.count) { S.previousSentence(); return; }
         if (S.mode === "scrolling") {
           if (window.scrollY <= 1) { post({ type: "edge", direction: "previous" }); return; }
@@ -445,7 +524,8 @@ enum ReaderEngine {
           }
         }
         try {
-          var x = S.mode === "paged" ? window.innerWidth * 0.5 : window.innerWidth * 0.5;
+          // Left of center, so a two-page spread samples the left page, not the gutter.
+          var x = window.innerWidth * 0.25;
           var y = window.innerHeight * 0.12;
           var range = document.caretRangeFromPoint(x, y);
           var node = range ? range.startContainer : null;
@@ -468,7 +548,20 @@ enum ReaderEngine {
         if (hasSelection()) { return; }
         var node = event.target;
         while (node) {
-          if (node.tagName && node.tagName.toLowerCase() === "a") { return; }
+          if (node.localName === "a") {
+            // Links inside the book are handed to Swift, which moves the reader
+            // there. Letting WebKit follow them would load the file behind the
+            // reader's back and scroll the viewport against the page transform.
+            var raw = node.getAttribute("href") ||
+                      node.getAttributeNS("http://www.w3.org/1999/xlink", "href");
+            var url = null;
+            try { url = raw ? new URL(raw, document.baseURI) : null; } catch (e) {}
+            if (url && url.protocol === "file:") {
+              event.preventDefault();
+              post({ type: "link", href: url.href });
+            }
+            return;
+          }
           node = node.parentElement;
         }
         var third = window.innerWidth / 3;
@@ -485,7 +578,10 @@ enum ReaderEngine {
       }, { passive: true });
 
       document.addEventListener("touchend", function (event) {
+        // With the page curl on, Swift owns horizontal drags — unless Sentence
+        // Focus is on, when a drag steps a sentence instead of turning a page.
         if (S.mode !== "paged" || hasSelection()) { return; }
+        if (S.curlEnabled && !S.focus.enabled) { return; }
         var touch = event.changedTouches[0];
         if (!touch) { return; }
         var dx = touch.clientX - touchStartX;
@@ -495,6 +591,14 @@ enum ReaderEngine {
           if (dx < 0) { S.next(); } else { S.previous(); }
         }
       }, { passive: true });
+
+      if (S.mode === "paged") {
+        // Pages move by transform alone; any scroll (focus, find, a stray
+        // fragment jump) would offset the columns and jumble the page.
+        window.addEventListener("scroll", function () {
+          if (window.scrollX !== 0 || window.scrollY !== 0) { window.scrollTo(0, 0); }
+        }, { passive: true });
+      }
 
       if (S.mode === "scrolling") {
         var scrollTimer = null;
@@ -507,15 +611,19 @@ enum ReaderEngine {
       // Re-measure on rotation, split-view resize, and late-loading images.
       var resizeTimer = null;
       function relayout() {
+        // While focused, the lit sentence is the anchor worth keeping, not the
+        // page fraction.
         if (S.focus.enabled && S.focus.index >= 0) {
           measure();
           S.focusSentence(S.focus.index, true);
           report();
           return;
         }
-        var fraction = S.fraction();
+        var fraction = S.targetFraction !== null ? S.targetFraction : S.fraction();
         measure();
-        S.goToFraction(fraction, true);
+        if (!(S.targetFragment && S.goToFragment(S.targetFragment, true))) {
+          S.goToFraction(fraction, true);
+        }
         report();
       }
       window.addEventListener("resize", function () {
@@ -523,6 +631,9 @@ enum ReaderEngine {
         resizeTimer = setTimeout(relayout, 120);
       });
       window.addEventListener("load", function () { setTimeout(relayout, 0); });
+      if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(function () { setTimeout(relayout, 0); });
+      }
 
       // --- Start -------------------------------------------------------------
       injectStyle();

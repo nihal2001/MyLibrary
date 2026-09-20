@@ -22,7 +22,7 @@ party packages, no bundled fonts, no bundled images.
 | Format | Support |
 | --- | --- |
 | EPUB 2 / EPUB 3 | Reflowable text, images, embedded CSS, EPUB 3 `nav` and EPUB 2 NCX contents |
-| PDF | PDFKit rendering, outline, continuous or page-by-page, one or two up |
+| PDF | PDFKit rendering, outline, scroll or swipe to turn pages, facing pages in landscape on iPad |
 | Text | `.txt` and `.md`, wrapped into the same reflowable reader |
 
 **Reader**
@@ -33,6 +33,10 @@ party packages, no bundled fonts, no bundled images.
   text size, line spacing, margins, and justification
 - Table of contents, tap zones (left/right to turn, center for chrome), and a
   scrubber across the whole book
+- Page curl you drag with your finger, as in Apple Books (paged layout; two-page
+  spreads curl from the middle on iPad)
+- iPad: two pages side by side in landscape (on by default, "Two Pages in
+  Landscape" in settings); a narrow Split View window falls back to one page
 - Keep-screen-awake toggle
 
 **Position and bookmarks**
@@ -53,7 +57,8 @@ line break is a typesetting accident, a sentence is a unit of meaning.
 Turn it on from the reader's **⋯** menu or in Themes & Settings. While it's on,
 tapping the right or left side of the page (or swiping) moves by one sentence
 rather than one page, and the page turns by itself when the next sentence falls
-onto it. Everything else still works: the scrubber, contents, themes, and
+onto it. Sentence Focus and the page curl want the same gestures, so the curl
+stands down while focus is on and comes back when it is switched off. Everything else still works: the scrubber, contents, themes, and
 rotation all keep the lit sentence in view. Bookmarking captures the focused
 sentence as its preview text.
 

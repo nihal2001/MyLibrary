@@ -20,6 +20,8 @@ final class ReflowableReaderModel {
     private(set) var sentenceIndex = -1
     private(set) var sentenceCount = 0
     private(set) var focusActive = false
+    /// The table-of-contents entry the engine reports the reader is inside.
+    private(set) var tocIndex: Int?
     private(set) var isLoading = true
     private(set) var loadError: String?
     var showsChrome = true
@@ -32,8 +34,15 @@ final class ReflowableReaderModel {
 
     var chapterTitle: String {
         guard let source else { return "" }
-        let candidates = source.toc.filter { ($0.spineIndex ?? -1) <= documentIndex && $0.spineIndex != nil }
-        return candidates.last?.title ?? ""
+        if let tocIndex, source.toc.indices.contains(tocIndex) {
+            return source.toc[tocIndex].title
+        }
+        // Before this document's first anchored chapter: the entry that starts
+        // the document itself, or else the last one in an earlier document.
+        return source.toc.last { entry in
+            guard let spine = entry.spineIndex else { return false }
+            return spine < documentIndex || (spine == documentIndex && entry.fragment == nil)
+        }?.title ?? ""
     }
 
     var pageDescription: String {
@@ -50,6 +59,11 @@ final class ReflowableReaderModel {
     // MARK: - Internals
 
     @ObservationIgnored let webView: WKWebView
+    /// The web view with the page-curl layer above it; this is what the view hosts.
+    @ObservationIgnored let canvas: ReaderCanvasView
+    @ObservationIgnored private let curl: PageCurlController
+    /// Whether the engine is laying out two pages per screen.
+    @ObservationIgnored private(set) var isSpread = false
     @ObservationIgnored private let bridge = Bridge()
     @ObservationIgnored private let settings = ReaderSettings.shared
     @ObservationIgnored private var book: Book?
@@ -68,12 +82,15 @@ final class ReflowableReaderModel {
         webView.scrollView.showsVerticalScrollIndicator = false
         webView.isOpaque = false
         webView.alpha = 0
+        canvas = ReaderCanvasView(webView: webView)
+        curl = PageCurlController()
 
         bridge.model = self
         webView.navigationDelegate = bridge
         // WKWebView copies its configuration at init, so the handler has to be
         // registered on the live copy rather than on the local one.
         webView.configuration.userContentController.add(bridge, name: "reader")
+        curl.attach(to: self, canvas: canvas)
     }
 
     // MARK: - Loading
@@ -111,6 +128,8 @@ final class ReflowableReaderModel {
     private func loadCurrentDocument() {
         guard let source, let url = source.documentURL(at: documentIndex) else { return }
         isLoading = true
+        tocIndex = nil
+        curl.invalidate()
         webView.alpha = 0
         refreshUserScripts()
         webView.loadFileURL(url, allowingReadAccessTo: source.rootURL)
@@ -121,11 +140,17 @@ final class ReflowableReaderModel {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
 
-        let payload: [String: Any] = [
-            "css": readerCSS(),
-            "mode": settings.layout.rawValue,
-            "focus": settings.sentenceFocus
-        ]
+        // Chapters that start partway through this document, so the engine can
+        // tell which one is on screen.
+        let anchors: [[String: Any]] = (source?.toc ?? []).enumerated().compactMap { index, entry in
+            guard entry.spineIndex == documentIndex, let fragment = entry.fragment else { return nil }
+            return ["toc": index, "id": fragment]
+        }
+        let payload: [String: Any] = ["css": readerCSS(),
+                                      "mode": settings.layout.rawValue,
+                                      "anchors": anchors,
+                                      "focus": settings.sentenceFocus,
+                                      "curl": settings.pageCurl && settings.layout == .paged]
         let json = (try? JSONSerialization.data(withJSONObject: payload))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
 
@@ -159,10 +184,49 @@ final class ReflowableReaderModel {
     /// so there is no need to reload the document.
     func setSentenceFocus(_ enabled: Bool) {
         evaluate("window.__ml && window.__ml.setFocusMode(\(enabled));")
+        // Hides the curl layer on the way in and re-arms it on the way out.
+        curl.setNeedsRefresh()
     }
 
     func goToNextPage() { evaluate("window.__ml && window.__ml.next();") }
     func goToPreviousPage() { evaluate("window.__ml && window.__ml.previous();") }
+
+    // MARK: - Page curl
+
+    var curlIsActive: Bool {
+        // Sentence Focus owns the taps and drags while it is on, moving by
+        // sentence rather than by page, so the curl stands down.
+        settings.pageCurl && !settings.sentenceFocus && settings.layout == .paged
+            && source != nil && !isLoading && loadError == nil
+    }
+
+    var hasPageAfter: Bool {
+        page < pageCount - 1 || documentIndex < (source?.documents.count ?? 0) - 1
+    }
+
+    var hasPageBefore: Bool { page > 0 || documentIndex > 0 }
+
+    var pageBackground: UIColor { UIColor(settings.theme.background) }
+
+    /// A curl landed: move the live page to match. Crossing a chapter break
+    /// loads the neighbouring document, as a tap would.
+    func curlDidTurn(forward: Bool) {
+        forward ? goToNextPage() : goToPreviousPage()
+    }
+
+    /// Shows `page` (or, for `nil`, the reader's own page) without changing the
+    /// position, and returns once WebKit has drawn it.
+    func showPage(_ page: Int?) async {
+        let target = page.map(String.init) ?? "window.__ml.page"
+        _ = try? await webView.callAsyncJavaScript(
+            """
+            if (window.__ml) { window.__ml.showPage(\(target)); }
+            await new Promise(function (resolve) {
+              requestAnimationFrame(function () { requestAnimationFrame(resolve); });
+            });
+            """,
+            contentWorld: .page)
+    }
 
     func goToDocument(at index: Int, fraction: Double = 0, fragment: String? = nil) {
         guard let source, source.documents.indices.contains(index) else { return }
@@ -239,6 +303,9 @@ final class ReflowableReaderModel {
             focusActive = (message["focus"] as? NSNumber)?.boolValue ?? false
             sentenceIndex = Int(number(message["sentence"]) ?? -1)
             sentenceCount = Int(number(message["sentenceCount"]) ?? 0)
+            let reportedTOC = Int(number(message["toc"]) ?? -1)
+            tocIndex = reportedTOC >= 0 ? reportedTOC : nil
+            isSpread = (message["spread"] as? NSNumber)?.boolValue ?? false
 
             var jumped = false
             if type == "ready" {
@@ -257,19 +324,43 @@ final class ReflowableReaderModel {
             // A pending jump reports again once it lands; saving the pre-jump
             // position here would overwrite where the reader actually left off.
             if !jumped { persistPosition() }
+            curl.setNeedsRefresh()
 
         case "edge":
             advanceDocument(by: (message["direction"] as? String) == "next" ? 1 : -1)
 
+        case "link":
+            if let href = message["href"] as? String, let url = URL(string: href) {
+                follow(link: url)
+            }
+
         case "tap":
             switch message["zone"] as? String {
-            case "left": goToPreviousPage()
-            case "right": goToNextPage()
+            case "left": if !curl.turn(forward: false) { goToPreviousPage() }
+            case "right": if !curl.turn(forward: true) { goToNextPage() }
             default: withAnimation(.easeInOut(duration: 0.2)) { showsChrome.toggle() }
             }
 
         default:
             break
+        }
+    }
+
+    /// Moves to the target of a link inside the book, keeping the spine index
+    /// and saved position in step. Targets outside the spine are ignored.
+    fileprivate func follow(link url: URL) {
+        guard let source else { return }
+        let path = url.resolvingSymlinksInPath().path
+        guard let index = source.documents.firstIndex(where: { $0.resolvingSymlinksInPath().path == path }) else {
+            return
+        }
+        let fragment = url.fragment(percentEncoded: false).flatMap { $0.isEmpty ? nil : $0 }
+        if index != documentIndex {
+            goToDocument(at: index, fraction: 0, fragment: fragment)
+        } else if let fragment {
+            evaluate("window.__ml && window.__ml.goToFragment(\(jsString(fragment)));")
+        } else {
+            evaluate("window.__ml && window.__ml.goToPage(0);")
         }
     }
 
@@ -323,7 +414,8 @@ final class ReflowableReaderModel {
     private func readerCSS() -> String {
         let theme = settings.theme
         let horizontal = Int(settings.margin)
-        let vertical = max(24, Int(settings.margin * 0.9))
+        // The reader view already keeps the bars' height clear above and below.
+        let vertical = max(12, Int(settings.margin * 0.5))
         let fontStack = settings.font.cssStack ?? "-apple-system, system-ui, sans-serif"
         let alignment = settings.justified ? "justify" : "initial"
         let linkColor = theme.isDark ? "#6fb0ff" : "#0a58ca"
@@ -354,9 +446,13 @@ final class ReflowableReaderModel {
           height: auto !important;
         }
         img, svg, image {
-          max-height: calc(100vh - \(vertical * 2)px) !important;
+          /* A little shorter than a page: with the line box around an inline
+             image, a full-page-tall one never fits a fresh column, and WebKit
+             slices it across two pages instead of moving it. */
+          max-height: calc(100vh - \(vertical * 2)px - 2em) !important;
           object-fit: contain;
         }
+        img, svg, figure { break-inside: avoid; }
         pre, code { white-space: pre-wrap !important; word-break: break-word; }
         a, a * { color: \(linkColor) !important; }
 
@@ -389,14 +485,36 @@ final class ReflowableReaderModel {
         case .paged:
             css += """
 
-            html, body { height: 100vh !important; overflow: hidden !important; }
+            html, body { height: 100vh !important; }
+            /* Clip at the viewport only. Clipping the body would also clip every
+               column past the first, and the columns move with its transform. */
+            html { overflow: hidden !important; }
             body {
+              overflow: visible !important;
               column-width: calc(100vw - \(horizontal * 2)px);
               column-gap: \(horizontal * 2)px;
               column-fill: auto;
               will-change: transform;
             }
             """
+            if settings.twoPagesInLandscape && UIDevice.current.userInterfaceIdiom == .pad {
+                // Two outer margins plus a gutter of two margins make one spread
+                // exactly one viewport wide, so pages still turn by 100vw. The
+                // media query follows rotation and split view without a reload.
+                let spreadMargin = max(horizontal, 48)
+                css += """
+
+                @media (orientation: landscape) and (min-width: 700px) {
+                  body {
+                    padding-left: \(spreadMargin)px !important;
+                    padding-right: \(spreadMargin)px !important;
+                    column-width: calc(50vw - \(spreadMargin * 2)px - 1px);
+                    column-count: 2;
+                    column-gap: \(spreadMargin * 2)px;
+                  }
+                }
+                """
+            }
         case .scrolling:
             css += """
 
@@ -441,10 +559,15 @@ private final class Bridge: NSObject, WKNavigationDelegate, WKScriptMessageHandl
             decisionHandler(.allow)
             return
         }
-        if url.isFileURL || navigationAction.navigationType != .linkActivated {
+        guard navigationAction.navigationType == .linkActivated else {
             decisionHandler(.allow)
+            return
+        }
+        decisionHandler(.cancel)
+        if url.isFileURL {
+            // The engine normally intercepts these; this catches any it missed.
+            MainActor.assumeIsolated { model?.follow(link: url) }
         } else {
-            decisionHandler(.cancel)
             UIApplication.shared.open(url)
         }
     }

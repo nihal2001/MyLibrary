@@ -15,12 +15,12 @@ function check(ok, label, detail) {
   else { console.log('  FAIL ' + label + (detail !== undefined ? '  ' + JSON.stringify(detail) : '')); failures++; }
 }
 
-function boot(bodyHTML, { focus = true, mode = 'paged', lang = 'en' } = {}) {
+function boot(bodyHTML, { focus = true, mode = 'paged', lang = 'en', curl = false } = {}) {
   const dom = new JSDOM(`<!DOCTYPE html><html lang="${lang}"><head></head><body>${bodyHTML}</body></html>`,
                         { runScripts: 'outside-only', pretendToBeVisual: true });
   const messages = [];
   dom.window.webkit = { messageHandlers: { reader: { postMessage: m => messages.push(m) } } };
-  dom.window.__mlConfig = { css: 'body { color: red; }', mode, focus };
+  dom.window.__mlConfig = { css: 'body { color: red; }', mode, focus, curl, anchors: [] };
   dom.window.eval(script);
   return { dom, win: dom.window, doc: dom.window.document, S: dom.window.__ml, messages };
 }
@@ -131,6 +131,29 @@ check(doc.querySelector('a').getAttribute('href') === 'x.html', 'link target pre
 check(S.focus.count === 2, 'scrolling mode wraps too', S.focus.count);
 S.next();
 check(S.focus.index === 1, 'scrolling mode steps sentences', S.focus.index);
+
+console.log('\n== page curl handoff ==');
+// The curl owns horizontal drags, but Sentence Focus takes them back so a drag
+// steps a sentence instead of turning a page. Swift mirrors this by switching
+// curlIsActive off while focus is on.
+({ doc, S } = boot('<p>Curl one. Curl two. Curl three.</p>', { focus: true, curl: true }));
+check(S.curlEnabled === true, 'curl flag read from config');
+check(S.focus.enabled === true, 'focus still on with the curl configured');
+S.next();
+check(S.focus.index === 1, 'a tap steps a sentence rather than turning a page', S.focus.index);
+
+({ doc, S } = boot('<p>Curl one. Curl two.</p>', { focus: false, curl: true }));
+check(S.curlEnabled === true, 'curl flag set with focus off');
+check(S.focus.count === 0, 'nothing wrapped while focus is off', S.focus.count);
+
+console.log('\n== report payload ==');
+({ S, messages } = boot('<p>Alpha. Beta.</p>'));
+const ready = messages.find(m => m.type === 'ready');
+for (const key of ['page', 'pageCount', 'fraction', 'focus', 'sentence', 'sentenceCount', 'toc', 'spread']) {
+  check(Object.prototype.hasOwnProperty.call(ready, key), 'ready reports ' + key, Object.keys(ready));
+}
+check(ready.focus === true && ready.sentenceCount === 2, 'focus fields carry real values',
+      { focus: ready.focus, count: ready.sentenceCount });
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : '\n' + failures + ' CHECK(S) FAILED');
 process.exit(failures === 0 ? 0 : 1);
