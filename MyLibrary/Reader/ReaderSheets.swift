@@ -166,12 +166,17 @@ struct ReaderSettingsView: View {
                     Toggle("Justify Text", isOn: $settings.justified)
                 }
 
-                Section("Layout") {
+                Section {
                     Picker("Scrolling", selection: $settings.layout) {
                         ForEach(ReaderLayout.allCases) { Text($0.displayName).tag($0) }
                     }
                     .pickerStyle(.segmented)
+                    Toggle("Sentence Focus", isOn: $settings.sentenceFocus)
                     Toggle("Keep Screen Awake", isOn: $settings.keepScreenOn)
+                } header: {
+                    Text("Layout")
+                } footer: {
+                    Text("Sentence Focus dims the page and lights one sentence at a time. Tap the right or left side of the page, or swipe, to move between sentences. EPUB and text books only.")
                 }
             }
             .navigationTitle("Reading")

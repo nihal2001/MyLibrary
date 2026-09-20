@@ -26,6 +26,8 @@ party packages, no bundled fonts, no bundled images.
 | Text | `.txt` and `.md`, wrapped into the same reflowable reader |
 
 **Reader**
+- Sentence Focus: the page dims and one sentence stays lit, advancing a sentence
+  at a time instead of a page (see below)
 - Paged (column-based, swipe or tap to turn) or continuous scrolling
 - Four themes (Light, Sepia, Gray, Dark), five system typefaces, adjustable
   text size, line spacing, margins, and justification
@@ -41,6 +43,44 @@ party packages, no bundled fonts, no bundled images.
 - PDFs store the page index
 - Bookmarks capture the chapter, a text snippet from the page, and the location;
   tap one to jump straight back
+
+## Sentence Focus
+
+Apple Books' Line Focus dims the page and lights one line at a time. This is the
+same effect with a sentence as the unit, which reads far better than a line — a
+line break is a typesetting accident, a sentence is a unit of meaning.
+
+Turn it on from the reader's **⋯** menu or in Themes & Settings. While it's on,
+tapping the right or left side of the page (or swiping) moves by one sentence
+rather than one page, and the page turns by itself when the next sentence falls
+onto it. Everything else still works: the scrubber, contents, themes, and
+rotation all keep the lit sentence in view. Bookmarking captures the focused
+sentence as its preview text.
+
+How it works:
+
+- Every text node in the chapter is rewritten into `<span>`s tagged with a
+  sentence index. A sentence that runs through `<em>` or `<a>` produces several
+  spans sharing one index, so it still lights up as a single unit.
+- Sentence boundaries come from `Intl.Segmenter`, the same Unicode segmentation
+  WebKit uses natively — no dictionary is bundled.
+- Unicode sentence breaking has no notion of abbreviations, so it splits
+  "Mr. Bennet" in two and cuts `"Stop!" she cried.` after the quote. Both read
+  badly one sentence at a time, so those breaks are merged back using the text
+  around them: a lowercase letter after the break, or a known abbreviation or
+  initial before it, means the sentence is still going.
+- Dimming is done with `color`, not `opacity`, so a page with thousands of spans
+  doesn't get thousands of stacking contexts.
+- The rules live in the stylesheet permanently and only bite once the engine adds
+  a root class, so the mode toggles instantly with no reload. Wrapping happens
+  once, on first use, and is kept afterwards.
+
+Measured on the largest chapter of a real Gutenberg EPUB (184 KB, 1,800
+sentences): segmentation 29 ms, span construction 23 ms. DOM insertion is a few
+milliseconds in WebKit. Typical chapters are a fraction of that size.
+
+Sentence Focus applies to EPUB and text books. PDFs are fixed-layout, so there
+is no reflowable text to segment.
 
 ## Size
 
@@ -110,12 +150,13 @@ MyLibrary/
   Reader/
     ReadingSource.swift     Unpacking and preparing a book for reading
     ReaderSettings.swift    Themes, fonts, layout preferences
-    ReaderEngine.swift      The pagination JavaScript
+    ReaderEngine.swift      The pagination and sentence-focus JavaScript
     ReflowableReaderModel.swift  WKWebView driver: position, chapters, taps
     ReaderView.swift        Reader shell and chrome
     PDFReaderView.swift     PDFKit reader and outline
     ReaderSheets.swift      Contents, bookmarks, and settings sheets
 Config/Info.plist           Document types, orientations, file sharing
+Tests/ReaderEngine/         Node tests for the reader JavaScript (optional)
 ```
 
 ## How the EPUB reader works
@@ -131,9 +172,17 @@ Config/Info.plist           Document types, orientations, file sharing
 5. The script reports the current page and fraction back to Swift, which stores
    it on the `Book` record and reports taps for page turns and chrome toggling.
 
+## Tests
+
+The reader's JavaScript lives in a Swift string literal, where no XCTest target
+can reach it, so it is tested separately under `Tests/ReaderEngine` — the tests
+extract the script from the Swift source and run it in jsdom. See the README
+there. The EPUB container and package parsing were likewise verified against
+generated EPUB 2/3 fixtures and a real 24 MB EPUB.
+
 ## Not included
 
 Scoped deliberately to the basics that were asked for. Natural next steps:
 highlights and notes, full-text search inside a book, collections, iCloud sync
-of position across devices, DRM-free audiobook support, and per-book typography
-overrides.
+of position across devices, DRM-free audiobook support, per-book typography
+overrides, and a paragraph option alongside Sentence Focus.

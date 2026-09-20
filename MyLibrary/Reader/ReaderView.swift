@@ -65,6 +65,7 @@ struct ReflowableReaderView: View {
         }
         .task { model.open(book: book) }
         .onChange(of: settings.styleSignature) { model.applySettingsIfNeeded() }
+        .onChange(of: settings.sentenceFocus) { _, enabled in model.setSentenceFocus(enabled) }
         .onChange(of: model.overallProgress) { _, value in
             if !isScrubbing { scrubValue = value }
         }
@@ -176,6 +177,9 @@ private struct ReaderChrome: View {
             Menu {
                 Button { onContents() } label: { Label("Contents", systemImage: "list.bullet") }
                 Button { onBookmarks() } label: { Label("Bookmarks", systemImage: "bookmark") }
+                Toggle(isOn: Bindable(settings).sentenceFocus) {
+                    Label("Sentence Focus", systemImage: "text.line.first.and.arrowtriangle.forward")
+                }
                 Button { onSettings() } label: { Label("Themes & Settings", systemImage: "textformat.size") }
             } label: {
                 Image(systemName: "ellipsis.circle")
@@ -193,7 +197,7 @@ private struct ReaderChrome: View {
                 if !editing { model.seek(toOverall: scrubValue) }
             }
             HStack {
-                Text(model.pageDescription)
+                Text(model.positionDescription)
                 Spacer()
                 Text("\(Int((model.overallProgress * 100).rounded()))% read")
             }
@@ -209,7 +213,7 @@ private struct ReaderChrome: View {
     /// A quiet progress line while the chrome is hidden.
     private var footer: some View {
         HStack {
-            Text(model.pageDescription)
+            Text(model.positionDescription)
             Spacer()
             Text("\(Int((model.overallProgress * 100).rounded()))%")
         }

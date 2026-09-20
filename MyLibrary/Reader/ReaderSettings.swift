@@ -33,6 +33,18 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The page color at low contrast, used to dim unfocused sentences.
+    /// Dimming by color rather than opacity avoids giving every sentence span
+    /// its own stacking context, which matters on a page with thousands of them.
+    var dimmedForegroundCSS: String {
+        switch self {
+        case .light: return "rgba(22, 23, 26, 0.20)"
+        case .sepia: return "rgba(67, 56, 42, 0.22)"
+        case .gray: return "rgba(232, 232, 234, 0.26)"
+        case .dark: return "rgba(211, 211, 214, 0.24)"
+        }
+    }
+
     var background: Color {
         switch self {
         case .light: return Color(red: 1, green: 1, blue: 1)
@@ -100,6 +112,7 @@ final class ReaderSettings {
         static let layout = "reader.layout"
         static let justified = "reader.justified"
         static let keepScreenOn = "reader.keepScreenOn"
+        static let sentenceFocus = "reader.sentenceFocus"
     }
 
     var theme: ReaderTheme { didSet { store(theme.rawValue, Key.theme) } }
@@ -111,6 +124,8 @@ final class ReaderSettings {
     var margin: Double { didSet { store(margin, Key.margin) } }
     var layout: ReaderLayout { didSet { store(layout.rawValue, Key.layout) } }
     var justified: Bool { didSet { store(justified, Key.justified) } }
+    /// Dims the page and lights one sentence at a time.
+    var sentenceFocus: Bool { didSet { store(sentenceFocus, Key.sentenceFocus) } }
     var keepScreenOn: Bool {
         didSet {
             store(keepScreenOn, Key.keepScreenOn)
@@ -128,6 +143,7 @@ final class ReaderSettings {
         margin = defaults.object(forKey: Key.margin) as? Double ?? 24
         layout = ReaderLayout(rawValue: defaults.string(forKey: Key.layout) ?? "") ?? .paged
         justified = defaults.object(forKey: Key.justified) as? Bool ?? false
+        sentenceFocus = defaults.object(forKey: Key.sentenceFocus) as? Bool ?? false
         keepScreenOn = defaults.object(forKey: Key.keepScreenOn) as? Bool ?? false
     }
 

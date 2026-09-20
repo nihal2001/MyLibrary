@@ -16,3 +16,9 @@ xcuserdata/
 
 # macOS
 .DS_Store
+
+# Reader engine test deps
+Tests/ReaderEngine/node_modules/
+Tests/ReaderEngine/package-lock.json
+Tests/ReaderEngine/chapter.xhtml
+Tests/ReaderEngine/paras.json

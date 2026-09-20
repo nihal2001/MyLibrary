@@ -17,6 +17,9 @@ final class ReflowableReaderModel {
     private(set) var page: Int = 0
     private(set) var pageCount: Int = 1
     private(set) var fraction: Double = 0
+    private(set) var sentenceIndex = -1
+    private(set) var sentenceCount = 0
+    private(set) var focusActive = false
     private(set) var isLoading = true
     private(set) var loadError: String?
     var showsChrome = true
@@ -35,6 +38,13 @@ final class ReflowableReaderModel {
 
     var pageDescription: String {
         pageCount > 1 ? "Page \(page + 1) of \(pageCount)" : ""
+    }
+
+    /// What the bottom bar shows: the page, plus the sentence while focused.
+    var positionDescription: String {
+        guard focusActive, sentenceCount > 0, sentenceIndex >= 0 else { return pageDescription }
+        let sentence = "Sentence \(sentenceIndex + 1) of \(sentenceCount)"
+        return pageDescription.isEmpty ? sentence : "\(pageDescription)  ·  \(sentence)"
     }
 
     // MARK: - Internals
@@ -111,7 +121,11 @@ final class ReflowableReaderModel {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
 
-        let payload: [String: Any] = ["css": readerCSS(), "mode": settings.layout.rawValue]
+        let payload: [String: Any] = [
+            "css": readerCSS(),
+            "mode": settings.layout.rawValue,
+            "focus": settings.sentenceFocus
+        ]
         let json = (try? JSONSerialization.data(withJSONObject: payload))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
 
@@ -140,6 +154,12 @@ final class ReflowableReaderModel {
     }
 
     // MARK: - Navigation
+
+    /// Sentence focus is toggled live; the stylesheet already carries the rules,
+    /// so there is no need to reload the document.
+    func setSentenceFocus(_ enabled: Bool) {
+        evaluate("window.__ml && window.__ml.setFocusMode(\(enabled));")
+    }
 
     func goToNextPage() { evaluate("window.__ml && window.__ml.next();") }
     func goToPreviousPage() { evaluate("window.__ml && window.__ml.previous();") }
@@ -216,6 +236,9 @@ final class ReflowableReaderModel {
             page = Int(number(message["page"]) ?? 0)
             pageCount = max(1, Int(number(message["pageCount"]) ?? 1))
             fraction = number(message["fraction"]) ?? 0
+            focusActive = (message["focus"] as? NSNumber)?.boolValue ?? false
+            sentenceIndex = Int(number(message["sentence"]) ?? -1)
+            sentenceCount = Int(number(message["sentenceCount"]) ?? 0)
 
             var jumped = false
             if type == "ready" {
@@ -336,6 +359,18 @@ final class ReflowableReaderModel {
         }
         pre, code { white-space: pre-wrap !important; word-break: break-word; }
         a, a * { color: \(linkColor) !important; }
+
+        /* Sentence focus: the page dims and one sentence stays lit. The rules
+           are always present and only bite once the engine adds the root class,
+           so the mode can be toggled without reloading the document. */
+        .ml-s { transition: color 0.22s ease; }
+        .ml-focus-mode .ml-s { color: \(theme.dimmedForegroundCSS) !important; }
+        .ml-focus-mode .ml-s.ml-on { color: \(theme.foregroundCSS) !important; }
+        .ml-focus-mode img, .ml-focus-mode svg, .ml-focus-mode image,
+        .ml-focus-mode video, .ml-focus-mode figure {
+          opacity: 0.22;
+          transition: opacity 0.22s ease;
+        }
         """
 
         if theme != .light {
