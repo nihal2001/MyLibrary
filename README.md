@@ -47,6 +47,20 @@ party packages, no bundled fonts, no bundled images.
 - PDFs store the page index
 - Bookmarks capture the chapter, a text snippet from the page, and the location;
   tap one to jump straight back
+- Positions sync between your devices over iCloud (see below)
+
+## Position sync
+
+Reading position, progress, and finished state sync through iCloud key-value
+storage, so a book picked up on the iPad opens where the iPhone left it. Book
+files are not synced: import the same file on each device, and the copies are
+matched by a SHA-256 of their contents. The most recent change wins, and a
+reader that is open on the book follows along when a newer position arrives.
+
+It needs the iCloud capability, which is already declared in
+`Config/MyLibrary.entitlements`: sign the app with your team and use the same
+bundle identifier on every device. Without an iCloud account the app works as
+before and positions stay local.
 
 ## Sentence Focus
 
@@ -145,6 +159,7 @@ MyLibrary/
   Storage/
     BookStorage.swift       On-disk locations for originals and unpacked copies
     ImportService.swift     Copy in, read metadata, build cover thumbnails
+    PositionSync.swift      Reading positions across devices via iCloud key-value storage
   Formats/
     ZipArchive.swift        Minimal ZIP reader (central directory + DEFLATE)
     XMLTree.swift           Small read-only DOM over XMLParser
@@ -161,6 +176,7 @@ MyLibrary/
     PDFReaderView.swift     PDFKit reader and outline
     ReaderSheets.swift      Contents, bookmarks, and settings sheets
 Config/Info.plist           Document types, orientations, file sharing
+Config/MyLibrary.entitlements  iCloud key-value storage
 Tests/ReaderEngine/         Node tests for the reader JavaScript (optional)
 ```
 
@@ -189,5 +205,5 @@ generated EPUB 2/3 fixtures and a real 24 MB EPUB.
 
 Scoped deliberately to the basics that were asked for. Natural next steps:
 highlights and notes, full-text search inside a book, collections, iCloud sync
-of position across devices, DRM-free audiobook support, per-book typography
+of the book files and bookmarks themselves, DRM-free audiobook support, per-book typography
 overrides, and a paragraph option alongside Sentence Focus.

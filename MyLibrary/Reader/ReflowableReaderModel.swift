@@ -69,6 +69,11 @@ final class ReflowableReaderModel {
     @ObservationIgnored private var book: Book?
     @ObservationIgnored private var pendingFraction: Double?
     @ObservationIgnored private var pendingFragment: String?
+    /// The saved position the reader was last sent back to. It lands on a
+    /// slightly different fraction on each device and after each relayout, so
+    /// nothing is saved until the reader moves off that page; otherwise merely
+    /// opening a book would sync a new position.
+    @ObservationIgnored private var restoredPosition: (index: Int, fraction: Double)?
     @ObservationIgnored private var appliedStyleSignature = ""
 
     init() {
@@ -116,8 +121,24 @@ final class ReflowableReaderModel {
         self.source = source
         documentIndex = min(max(0, index), max(0, source.documents.count - 1))
         pendingFraction = fraction
+        restoredPosition = (documentIndex, fraction)
         applyChrome()
         loadCurrentDocument()
+    }
+
+    /// Another device read further in this book: move to the position it saved.
+    func followSyncedPosition() {
+        guard let book, let source, !source.documents.isEmpty else { return }
+        let index = min(max(0, book.spineIndex), source.documents.count - 1)
+        restoredPosition = (index, book.spineFraction)
+        if index == documentIndex, !isLoading {
+            evaluate("window.__ml && window.__ml.goToFraction(\(book.spineFraction));")
+        } else {
+            documentIndex = index
+            pendingFraction = book.spineFraction
+            pendingFragment = nil
+            loadCurrentDocument()
+        }
     }
 
     private func fail(with message: String) {
@@ -167,6 +188,7 @@ final class ReflowableReaderModel {
         applyChrome()
         guard appliedStyleSignature != settings.styleSignature else { return }
         pendingFraction = fraction
+        if restoredPosition == nil { restoredPosition = (documentIndex, fraction) }
         loadCurrentDocument()
     }
 
@@ -233,6 +255,7 @@ final class ReflowableReaderModel {
         documentIndex = index
         pendingFraction = fraction
         pendingFragment = fragment
+        restoredPosition = nil
         loadCurrentDocument()
     }
 
@@ -388,11 +411,18 @@ final class ReflowableReaderModel {
 
     private func persistPosition() {
         guard let book else { return }
+        if let restored = restoredPosition {
+            // A paged fraction snaps to the nearest page, up to half a page off.
+            let tolerance = pageCount > 1 ? 0.5 / Double(pageCount - 1) + 0.0001 : 0.0005
+            if restored.index == documentIndex, abs(restored.fraction - fraction) <= tolerance { return }
+            restoredPosition = nil
+        }
         book.spineIndex = documentIndex
         book.spineFraction = fraction
         book.progress = overallProgress
         book.lastOpenedAt = .now
         if overallProgress >= 0.985 { book.isFinished = true }
+        PositionSync.shared.recordLocalChange(book)
     }
 
     private func number(_ value: Any?) -> Double? {

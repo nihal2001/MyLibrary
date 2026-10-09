@@ -15,10 +15,16 @@ struct MyLibraryApp: App {
         }
     }()
 
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
             LibraryView()
+                .task { PositionSync.shared.start(container: container) }
         }
         .modelContainer(container)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { PositionSync.shared.refresh() }
+        }
     }
 }

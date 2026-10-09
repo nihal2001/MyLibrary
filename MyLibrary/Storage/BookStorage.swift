@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Where book files live on disk.
@@ -35,6 +36,22 @@ enum BookStorage {
 
     static func fileSize(of url: URL) -> Int {
         (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+    }
+
+    /// SHA-256 of a file as hex, read in chunks so large PDFs stay off the heap.
+    static func contentHash(of url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while true {
+            let more = autoreleasepool { () -> Bool in
+                guard let chunk = try? handle.read(upToCount: 1 << 20), !chunk.isEmpty else { return false }
+                hasher.update(data: chunk)
+                return true
+            }
+            if !more { break }
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     static func removeFile(named fileName: String) {
