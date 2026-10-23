@@ -79,7 +79,7 @@ enum ReadingSourceLoader {
 
         let html = """
         <!DOCTYPE html>
-        <html><head><meta charset="utf-8"/><title>\(escapeHTML(title))</title></head>
+        <html xmlns="http://www.w3.org/1999/xhtml"><head><meta charset="utf-8"/><title>\(escapeHTML(title))</title></head>
         <body>\(paragraphs)</body></html>
         """
         try html.write(to: destination, atomically: true, encoding: .utf8)

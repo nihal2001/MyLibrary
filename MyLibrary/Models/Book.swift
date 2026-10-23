@@ -35,6 +35,8 @@ final class Book {
     var fileName: String
     var formatRaw: String
     var fileSize: Int
+    /// SHA-256 of the file, which identifies the same book on another device.
+    var contentHash: String?
     var addedAt: Date
     var lastOpenedAt: Date?
 
@@ -45,6 +47,8 @@ final class Book {
     var spineFraction: Double
     /// Fixed-layout position.
     var pageIndex: Int
+    /// When the position last changed on any device; the newest one syncs.
+    var positionUpdatedAt: Date?
 
     var isFinished: Bool
 

@@ -77,6 +77,9 @@ struct ReflowableReaderView: View {
         .onChange(of: model.overallProgress) { _, value in
             if !isScrubbing { scrubValue = value }
         }
+        .onReceive(NotificationCenter.default.publisher(for: PositionSync.didApplyRemotePosition)) { note in
+            if note.object as? UUID == book.id { model.followSyncedPosition() }
+        }
         .sheet(isPresented: $showsTOC) {
             TableOfContentsView(entries: model.source?.toc ?? [],
                                 currentIndex: model.documentIndex,

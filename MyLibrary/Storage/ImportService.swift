@@ -48,7 +48,10 @@ enum ImportService {
                         format: format,
                         fileSize: BookStorage.fileSize(of: destination),
                         coverData: metadata.cover)
+        book.contentHash = BookStorage.contentHash(of: destination)
         context.insert(book)
+        // Pick up where another device left off in this book, if one has.
+        Task { @MainActor in PositionSync.shared.merge() }
         return book
     }
 

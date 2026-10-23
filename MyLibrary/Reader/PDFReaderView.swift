@@ -56,13 +56,20 @@ struct PDFReaderView: View {
             controller.swipesToTurn = value
         }
         .onChange(of: controller.pageIndex) { _, page in
+            // Landing on the saved page, at open or when another device moved
+            // it, isn't a change worth syncing back.
+            let moved = page != book.pageIndex
             book.pageIndex = page
             if controller.pageCount > 0 {
                 book.progress = min(1, Double(page + 1) / Double(controller.pageCount))
                 if book.progress >= 0.995 { book.isFinished = true }
             }
             book.lastOpenedAt = .now
+            if moved { PositionSync.shared.recordLocalChange(book) }
             if !isScrubbing { scrubValue = Double(page) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: PositionSync.didApplyRemotePosition)) { note in
+            if note.object as? UUID == book.id { controller.go(toPage: book.pageIndex) }
         }
         .sheet(isPresented: $showsBookmarks) {
             BookmarkListView(book: book) { bookmark in

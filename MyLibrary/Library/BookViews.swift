@@ -156,6 +156,7 @@ private struct BookMenu: View {
         Button {
             book.isFinished.toggle()
             if book.isFinished { book.progress = 1 }
+            PositionSync.shared.recordLocalChange(book)
         } label: {
             Label(book.isFinished ? "Mark as Unread" : "Mark as Finished",
                   systemImage: book.isFinished ? "arrow.uturn.backward" : "checkmark.circle")
@@ -167,6 +168,7 @@ private struct BookMenu: View {
             book.spineFraction = 0
             book.pageIndex = 0
             book.isFinished = false
+            PositionSync.shared.recordLocalChange(book)
         } label: {
             Label("Reset Progress", systemImage: "arrow.counterclockwise")
         }
