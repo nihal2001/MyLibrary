@@ -146,6 +146,35 @@ check(S.focus.index === 1, 'a tap steps a sentence rather than turning a page', 
 check(S.curlEnabled === true, 'curl flag set with focus off');
 check(S.focus.count === 0, 'nothing wrapped while focus is off', S.focus.count);
 
+console.log('\n== sentence running onto the next page ==');
+{
+  // jsdom has no layout, so fake one: three pages, with the second sentence
+  // starting on page 0 and finishing on page 1.
+  let win;
+  ({ win, S } = boot('<p>First here. Second runs over. Third after.</p>'));
+  const stride = S.stride;
+  const pageOf = { 0: [0], 1: [0, 1], 2: [1] };
+  S.pageCount = 3;
+  for (let i = 0; i < S.focus.count; i++) {
+    for (const span of S.focus.groups[i]) {
+      span.getClientRects = () => pageOf[i].map(p => {
+        const left = p * stride + 10 - S.page * stride;
+        return { left, right: left + 50, top: 0, bottom: 20, width: 50, height: 20 };
+      });
+    }
+  }
+  S.focusSentence(0, true);
+  S.next();
+  check(S.focus.index === 1 && S.page === 0, 'steps to a sentence that starts on this page',
+        { index: S.focus.index, page: S.page });
+  S.next();
+  check(S.focus.index === 1 && S.page === 1, 'turns the page and keeps the sentence lit',
+        { index: S.focus.index, page: S.page });
+  S.next();
+  check(S.focus.index === 2 && S.page === 1, 'then moves on to the next sentence',
+        { index: S.focus.index, page: S.page });
+}
+
 console.log('\n== report payload ==');
 ({ S, messages } = boot('<p>Alpha. Beta.</p>'));
 const ready = messages.find(m => m.type === 'ready');

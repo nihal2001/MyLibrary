@@ -384,7 +384,29 @@ enum ReaderEngine {
         report();
       };
 
+      // The last page any part of the lit sentence sits on, so a sentence that
+      // runs past the page can be read to its end before focus moves on.
+      function lastPageOfFocus() {
+        var spans = S.focus.groups[S.focus.index];
+        var last = S.page;
+        if (!spans) { return last; }
+        for (var i = 0; i < spans.length; i++) {
+          var rects = spans[i].getClientRects();
+          for (var j = 0; j < rects.length; j++) {
+            if (rects[j].width <= 0 && rects[j].height <= 0) { continue; }
+            // Post-transform rects, as in revealSpan.
+            var page = Math.floor((rects[j].left + S.page * S.stride) / S.stride);
+            if (page > last) { last = page; }
+          }
+        }
+        return Math.min(last, S.pageCount - 1);
+      }
+
       S.nextSentence = function () {
+        if (S.mode === "paged" && S.focus.index >= 0 && lastPageOfFocus() > S.page) {
+          S.goToPage(S.page + 1);
+          return;
+        }
         if (S.focus.index >= S.focus.count - 1) { post({ type: "edge", direction: "next" }); return; }
         S.focusSentence(S.focus.index + 1);
       };
