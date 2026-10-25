@@ -57,6 +57,7 @@ struct BookCoverView: View {
 struct BookGrid: View {
     let books: [Book]
     let onOpen: (Book) -> Void
+    let onPrint: (Book) -> Void
     let onDelete: (Book) -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 108, maximum: 170), spacing: 18, alignment: .top)]
@@ -84,7 +85,7 @@ struct BookGrid: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .contextMenu { BookMenu(book: book, onDelete: onDelete) }
+                    .contextMenu { BookMenu(book: book, onPrint: onPrint, onDelete: onDelete) }
                 }
             }
             .padding(20)
@@ -95,6 +96,7 @@ struct BookGrid: View {
 struct BookList: View {
     let books: [Book]
     let onOpen: (Book) -> Void
+    let onPrint: (Book) -> Void
     let onDelete: (Book) -> Void
 
     var body: some View {
@@ -121,7 +123,7 @@ struct BookList: View {
                         Label("Delete", systemImage: "trash")
                     }
                 }
-                .contextMenu { BookMenu(book: book, onDelete: onDelete) }
+                .contextMenu { BookMenu(book: book, onPrint: onPrint, onDelete: onDelete) }
             }
         }
         .listStyle(.plain)
@@ -150,6 +152,7 @@ private struct ProgressBadge: View {
 
 private struct BookMenu: View {
     @Bindable var book: Book
+    let onPrint: (Book) -> Void
     let onDelete: (Book) -> Void
 
     var body: some View {
@@ -174,6 +177,8 @@ private struct BookMenu: View {
         }
 
         ShareLink(item: book.fileURL) { Label("Share File", systemImage: "square.and.arrow.up") }
+
+        Button { onPrint(book) } label: { Label("Print…", systemImage: "printer") }
 
         Divider()
 

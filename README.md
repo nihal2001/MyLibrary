@@ -16,7 +16,7 @@ party packages, no bundled fonts, no bundled images.
 - Cover art extracted from the file, with a generated cover when there is none
 - Import from Files/iCloud Drive, "Open in" from other apps, AirDrop, and
   Finder/iTunes file sharing
-- Per-book actions: mark finished, reset progress, share the original file, delete
+- Per-book actions: mark finished, reset progress, share the original file, print, delete
 
 **Formats**
 | Format | Support |
@@ -48,6 +48,38 @@ party packages, no bundled fonts, no bundled images.
 - Bookmarks capture the chapter, a text snippet from the page, and the location;
   tap one to jump straight back
 - Positions sync between your devices over iCloud (see below)
+
+**Printing**
+- Print any book from the reader's **⋯** menu or the book's menu in the library
+- PDFs go straight to the system print panel, as they are already paginated
+- EPUB and text books open a print setup sheet with a live preview of the
+  printed pages (see below)
+
+## Printing
+
+EPUB and text books have no pages of their own, so the print sheet lays them
+out for paper. Choose:
+
+- **Pages**: the whole book, the current chapter, or a range of chapters
+- **Paper**: US Letter, A4, A5, trade paperback (6 × 9 in), or pocket
+  (4.25 × 6.87 in), and the margin on every side
+- **Text**: the book's own typeface or one of the reader's five, the size in
+  points, line spacing, justification, and hyphenation
+- **Layout**: start each chapter on a new page, include or drop images, black
+  text on white (drops the book's colors and backgrounds to save ink), the book
+  title at the top of each page, and page numbers
+
+The options are remembered between books. The preview shows one chapter (the
+one you're reading, when it's being printed) and updates as you change things.
+**Print** sends the job to the system print panel for printer, copies, and
+double-sided printing; **Save as PDF** hands the same pages to the share sheet.
+
+How it works: the chosen spine documents are merged into one page in an
+offscreen `WKWebView`, with every relative image, stylesheet, and font
+reference made absolute against the chapter it came from. A print stylesheet
+goes on top, and WebKit's print formatter paginates the result into a PDF at the
+chosen paper size, with a `UIPrintPageRenderer` drawing the running title and
+page numbers. The preview is that same PDF, so what you see is what prints.
 
 ## Position sync
 
@@ -175,6 +207,10 @@ MyLibrary/
     ReaderView.swift        Reader shell and chrome
     PDFReaderView.swift     PDFKit reader and outline
     ReaderSheets.swift      Contents, bookmarks, and settings sheets
+  Printing/
+    PrintOptions.swift      Paper sizes and the print layout options
+    BookPrinter.swift       Lays EPUB and text out as a PDF; hands files to the print panel
+    BookPrintView.swift     Print setup sheet with live preview
 Config/Info.plist           Document types, orientations, file sharing
 Config/MyLibrary.entitlements  iCloud key-value storage
 Tests/ReaderEngine/         Node tests for the reader JavaScript (optional)
