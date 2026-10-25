@@ -110,6 +110,14 @@ struct PDFReaderView: View {
                 if UIDevice.current.userInterfaceIdiom == .pad {
                     Toggle("Two Pages in Landscape", isOn: $settings.twoPagesInLandscape)
                 }
+                if PrintPresenter.canPrint(book.fileURL) {
+                    Divider()
+                    Button {
+                        PrintPresenter.printFile(at: book.fileURL, jobName: book.title)
+                    } label: {
+                        Label("Print…", systemImage: "printer")
+                    }
+                }
             } label: {
                 Image(systemName: "ellipsis.circle")
             }

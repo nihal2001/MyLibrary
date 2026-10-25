@@ -32,6 +32,7 @@ struct ReflowableReaderView: View {
     @State private var showsTOC = false
     @State private var showsBookmarks = false
     @State private var showsSettings = false
+    @State private var showsPrint = false
     @State private var scrubValue: Double = 0
     @State private var isScrubbing = false
     /// Space kept clear for the top and bottom bars, so showing them never
@@ -69,6 +70,7 @@ struct ReflowableReaderView: View {
                          onContents: { showsTOC = true },
                          onBookmarks: { showsBookmarks = true },
                          onSettings: { showsSettings = true },
+                         onPrint: { showsPrint = true },
                          onToggleBookmark: toggleBookmark)
         }
         .task { model.open(book: book) }
@@ -95,6 +97,9 @@ struct ReflowableReaderView: View {
         .sheet(isPresented: $showsSettings) {
             ReaderSettingsView(settings: settings)
                 .presentationDetents([.height(420), .large])
+        }
+        .sheet(isPresented: $showsPrint) {
+            BookPrintView(book: book, source: model.source, currentIndex: model.documentIndex)
         }
         .persistentSystemOverlays(model.showsChrome ? .visible : .hidden)
         .preferredColorScheme(settings.theme.isDark ? .dark : .light)
@@ -151,6 +156,7 @@ private struct ReaderChrome: View {
     let onContents: () -> Void
     let onBookmarks: () -> Void
     let onSettings: () -> Void
+    let onPrint: () -> Void
     let onToggleBookmark: () -> Void
 
     private var isBookmarked: Bool { model.matchingBookmark(in: book) != nil }
@@ -202,6 +208,8 @@ private struct ReaderChrome: View {
                     Label("Sentence Focus", systemImage: "text.line.first.and.arrowtriangle.forward")
                 }
                 Button { onSettings() } label: { Label("Themes & Settings", systemImage: "textformat.size") }
+                Divider()
+                Button { onPrint() } label: { Label("Print…", systemImage: "printer") }
             } label: {
                 Image(systemName: "ellipsis.circle")
             }

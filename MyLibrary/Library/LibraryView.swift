@@ -49,6 +49,7 @@ struct LibraryView: View {
     @State private var isImporting = false
     @State private var importError: String?
     @State private var openedBook: Book?
+    @State private var printingBook: Book?
     @State private var showsAbout = false
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
 
@@ -80,6 +81,9 @@ struct LibraryView: View {
             ReaderView(book: book)
         }
         .sheet(isPresented: $showsAbout) { AboutView() }
+        .sheet(item: $printingBook) { book in
+            BookPrintView(book: book, currentIndex: book.spineIndex)
+        }
         .alert("Import Failed",
                isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } }),
                presenting: importError) { _ in
@@ -107,9 +111,9 @@ struct LibraryView: View {
             } else if visible.isEmpty {
                 ContentUnavailableView.search(text: searchText)
             } else if showsGrid {
-                BookGrid(books: visible, onOpen: { openedBook = $0 }, onDelete: delete)
+                BookGrid(books: visible, onOpen: { openedBook = $0 }, onPrint: printBook, onDelete: delete)
             } else {
-                BookList(books: visible, onOpen: { openedBook = $0 }, onDelete: delete)
+                BookList(books: visible, onOpen: { openedBook = $0 }, onPrint: printBook, onDelete: delete)
             }
         }
         .navigationTitle((shelf ?? .all).title)
@@ -180,6 +184,16 @@ struct LibraryView: View {
             importError = failures.first
         case .failure(let error):
             importError = error.localizedDescription
+        }
+    }
+
+    /// PDFs are already paginated and print as they are; reflowable books get
+    /// the print setup sheet first.
+    private func printBook(_ book: Book) {
+        if book.format == .pdf {
+            PrintPresenter.printFile(at: book.fileURL, jobName: book.title)
+        } else {
+            printingBook = book
         }
     }
 

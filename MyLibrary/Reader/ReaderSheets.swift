@@ -201,7 +201,7 @@ struct ReaderSettingsView: View {
     }
 }
 
-private struct LabeledStepper: View {
+struct LabeledStepper: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
